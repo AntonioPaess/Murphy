@@ -21,7 +21,7 @@ That story makes the technical choices visible to a judge in under two minutes.
 - KMP shared domain and deterministic state transitions;
 - native BLE adapters for Android and iOS;
 - explicit packet TTL and duplicate protection to prevent loops;
-- offline-first event history;
+- offline-first event history with a replaceable persistence boundary;
 - deterministic simulation for demos and regression tests;
 - failure injection instead of a happy-path-only prototype.
 
@@ -35,5 +35,8 @@ That story makes the technical choices visible to a judge in under two minutes.
 
 ## Current phase
 
-The repository is in the shared-core foundation phase. The first increment contains the state machine, packet router and a deterministic topology simulator. Platform BLE adapters and the polished demo UI come after the core behavior is stable.
-
+The repository is in the shared-core foundation phase. The current increment also
+records every routing decision in an offline event store, which gives the future
+demo a clear explanation of why a message was forwarded, delivered, duplicated
+or expired. Platform BLE adapters and the polished demo UI come after the core
+behavior is stable.

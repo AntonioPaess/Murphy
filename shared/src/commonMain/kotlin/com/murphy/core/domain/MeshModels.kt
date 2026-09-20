@@ -49,6 +49,11 @@ public data class MeshEnvelope(
     public val ttl: Int,
 )
 
+public enum class MessageDropReason {
+    DUPLICATE,
+    TTL_EXPIRED,
+}
+
 public sealed interface MeshEvent {
     public val atMillis: Long
 
@@ -84,6 +89,25 @@ public sealed interface MeshEvent {
         public val reason: LinkFailureReason,
         override val atMillis: Long,
     ) : MeshEvent
+
+    public data class MessageForwarded(
+        public val node: NodeId,
+        public val envelope: MeshEnvelope,
+        override val atMillis: Long,
+    ) : MeshEvent
+
+    public data class MessageDelivered(
+        public val node: NodeId,
+        public val envelope: MeshEnvelope,
+        override val atMillis: Long,
+    ) : MeshEvent
+
+    public data class MessageDropped(
+        public val node: NodeId,
+        public val messageId: MessageId,
+        public val reason: MessageDropReason,
+        override val atMillis: Long,
+    ) : MeshEvent
 }
 
 public data class MeshSnapshot(
@@ -91,4 +115,3 @@ public data class MeshSnapshot(
     public val peers: List<Peer>,
     public val history: List<MeshEvent>,
 )
-

@@ -7,7 +7,8 @@ The project is intentionally starting with the shared domain core before platfor
 - a connection state machine;
 - a small, testable mesh packet router with TTL and duplicate protection;
 - a deterministic topology simulator for relay failures and rerouting;
-- an event history that can later feed the Android and iOS UIs.
+- an offline event history with a replaceable store;
+- routing decision events that make forwarding, delivery and drops visible to the UI.
 
 ## Project direction
 
@@ -16,6 +17,7 @@ The project is intentionally starting with the shared domain core before platfor
 - offline-first operation;
 - no dependency on a central server for peer-to-peer messaging;
 - explicit state and event history for debugging and emergency scenarios.
+- a storage seam that lets each platform persist the same event model offline.
 
 The project is currently in the conception/foundation phase and is planned as a candidate for the JetBrains KMP Contest 2027.
 
@@ -28,6 +30,10 @@ shared/
   src/commonMain/   platform-independent domain and routing logic
   src/commonTest/   deterministic unit tests
 ```
+
+`MeshSession.handleIncoming` is the bridge between transport adapters and the
+shared routing core. It applies TTL and duplicate protection, then records the
+decision in `MeshEventStore` so an emergency trace remains inspectable offline.
 
 ## Local verification
 
