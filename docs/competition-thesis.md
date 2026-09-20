@@ -22,8 +22,14 @@ That story makes the technical choices visible to a judge in under two minutes.
 - native BLE adapters for Android and iOS;
 - explicit packet TTL and duplicate protection to prevent loops;
 - offline-first event history with a replaceable persistence boundary;
+- a shared BLE-to-routing coordinator with deterministic forwarding behavior;
 - deterministic simulation for demos and regression tests;
 - failure injection instead of a happy-path-only prototype.
+
+The data plane is deliberately decentralized. A temporary session coordinator
+may exist for non-critical group settings, but no leader is required for an
+emergency message to be delivered. This makes relay loss part of the product
+story instead of an architectural failure.
 
 ## Definition of a competition-ready release
 

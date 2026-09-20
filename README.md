@@ -9,6 +9,7 @@ The project is intentionally starting with the shared domain core before platfor
 - a deterministic topology simulator for relay failures and rerouting;
 - an offline event history with a replaceable store;
 - routing decision events that make forwarding, delivery and drops visible to the UI.
+- a shared transport coordinator that bridges BLE connections and routing decisions.
 
 ## Project direction
 
@@ -16,12 +17,13 @@ The project is intentionally starting with the shared domain core before platfor
 - native Bluetooth adapters per platform;
 - offline-first operation;
 - no dependency on a central server for peer-to-peer messaging;
-- explicit state and event history for debugging and emergency scenarios.
+- explicit state and event history for debugging and emergency scenarios;
 - a storage seam that lets each platform persist the same event model offline.
 
 The project is currently in the conception/foundation phase and is planned as a candidate for the JetBrains KMP Contest 2027.
 
 The competition thesis and release bar are documented in [docs/competition-thesis.md](docs/competition-thesis.md).
+The decentralized topology decision is documented in [docs/architecture.md](docs/architecture.md).
 
 ## Layout
 
@@ -34,6 +36,10 @@ shared/
 `MeshSession.handleIncoming` is the bridge between transport adapters and the
 shared routing core. It applies TTL and duplicate protection, then records the
 decision in `MeshEventStore` so an emergency trace remains inspectable offline.
+
+`MeshTransportCoordinator` currently uses bounded flooding: it forwards a
+message to every attached peer except the peer that sent it. TTL and duplicate
+protection prevent loops while a route-table strategy is still being developed.
 
 ## Local verification
 
