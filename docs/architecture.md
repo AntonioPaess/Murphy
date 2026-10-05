@@ -33,3 +33,25 @@ Flooding is intentionally simple and deterministic for the first demo, but it
 uses more radio activity than a learned route. Battery-aware forwarding,
 connection quality and route expiry are later optimization layers; they are not
 allowed to compromise delivery when the topology changes.
+
+## Transport outcome semantics
+
+The coordinator attempts each eligible peer in deterministic order. An expected
+radio error is reported as `BleSendException`; it is recorded for that peer and
+does not abort the remaining sends. Cancellation and unexpected exceptions
+propagate. Calls to the coordinator and its session must be serialized by the
+platform owner; their mutable state is not thread-safe.
+
+`Forwarded.peerIds` contains sends accepted by adapters. `Forwarded.failures`
+contains failed attempts; the accepted list can be empty if every attempt failed.
+`NoRoute` means there were no eligible attached connections, including when only
+the source peer remains. It is a local observation, not proof of global network
+reachability.
+
+`MessageForwarded` records the router's forwarding decision. Separate
+`MessageSendAccepted` and `MessageSendFailed` events record adapter outcomes;
+`MessageNoRoute` records the absence of an eligible neighbour. Timestamps belong
+to the caller-supplied processing batch. Accepted sends are not destination
+acknowledgements. Delivery acknowledgements, durable storage and retry queues
+remain future work. A repeated envelope is still deduplicated, even after a
+failed send; retry support must use a separate pending-send path.

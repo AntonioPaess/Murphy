@@ -66,6 +66,23 @@ public class MeshSession(
         return snapshot()
     }
 
+    public fun recordSendAccepted(messageId: MessageId, peerId: NodeId, atMillis: Long) {
+        eventStore.append(MeshEvent.MessageSendAccepted(messageId, peerId, atMillis))
+    }
+
+    public fun recordSendFailed(
+        messageId: MessageId,
+        peerId: NodeId,
+        reason: LinkFailureReason,
+        atMillis: Long,
+    ) {
+        eventStore.append(MeshEvent.MessageSendFailed(messageId, peerId, reason, atMillis))
+    }
+
+    public fun recordNoRoute(messageId: MessageId, atMillis: Long) {
+        eventStore.append(MeshEvent.MessageNoRoute(messageId, atMillis))
+    }
+
     public fun handleIncoming(envelope: MeshEnvelope, atMillis: Long): ForwardDecision {
         val decision = router.accept(envelope)
         when (decision) {

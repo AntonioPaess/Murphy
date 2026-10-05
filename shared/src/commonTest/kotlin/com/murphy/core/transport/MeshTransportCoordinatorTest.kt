@@ -1,6 +1,8 @@
 package com.murphy.core.transport
 
 import com.murphy.core.domain.MeshEnvelope
+import com.murphy.core.domain.LinkFailureReason
+import com.murphy.core.domain.MeshEvent
 import com.murphy.core.domain.MeshSession
 import com.murphy.core.domain.MessageDropReason
 import com.murphy.core.domain.MessageId
@@ -11,6 +13,7 @@ import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.startCoroutine
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class MeshTransportCoordinatorTest {
     private val local = NodeId("local")
@@ -79,6 +82,87 @@ class MeshTransportCoordinatorTest {
         )
     }
 
+    @Test
+    fun aFailedPeerDoesNotPreventSendingToTheRemainingPeer() {
+        val session = MeshSession(local)
+        val coordinator = MeshTransportCoordinator(session)
+        val failedConnection = FakeBlePeerConnection(
+            sendFailure = BleSendException(LinkFailureReason.PEER_UNREACHABLE),
+        )
+        val healthyConnection = FakeBlePeerConnection()
+        // "companion" is attempted before "relay" in deterministic peer order.
+        coordinator.attach(companion, failedConnection)
+        coordinator.attach(relay, healthyConnection)
+        val envelope = envelope(ttl = 2)
+
+        val result = runSuspend { coordinator.handleIncoming(envelope, atMillis = 15L) }
+
+        assertEquals(
+            MeshTransportDecision.Forwarded(
+                envelope.copy(ttl = 1),
+                peerIds = listOf(relay.id),
+                failures = listOf(PeerSendFailure(companion.id, LinkFailureReason.PEER_UNREACHABLE)),
+            ),
+            result,
+        )
+        assertEquals(listOf(envelope.copy(ttl = 1)), healthyConnection.sent)
+        assertEquals(
+            listOf(
+                MeshEvent.MessageSendFailed(envelope.id, companion.id, LinkFailureReason.PEER_UNREACHABLE, 15L),
+                MeshEvent.MessageSendAccepted(envelope.id, relay.id, 15L),
+            ),
+            session.snapshot().history.takeLast(2),
+        )
+    }
+
+    @Test
+    fun reportsEveryFailureWhenNoSendWasAccepted() {
+        val coordinator = MeshTransportCoordinator(MeshSession(local))
+        coordinator.attach(relay, FakeBlePeerConnection(
+            sendFailure = BleSendException(LinkFailureReason.CONNECTION_TIMEOUT),
+        ))
+        val envelope = envelope(ttl = 2)
+
+        assertEquals(
+            MeshTransportDecision.Forwarded(
+                envelope.copy(ttl = 1),
+                peerIds = emptyList(),
+                failures = listOf(PeerSendFailure(relay.id, LinkFailureReason.CONNECTION_TIMEOUT)),
+            ),
+            runSuspend { coordinator.handleIncoming(envelope, atMillis = 16L) },
+        )
+    }
+
+    @Test
+    fun reportsNoRouteWhenOnlyTheSourceIsConnected() {
+        val session = MeshSession(local)
+        val coordinator = MeshTransportCoordinator(session)
+        val connection = FakeBlePeerConnection()
+        coordinator.attach(relay, connection)
+        val envelope = envelope(ttl = 2)
+
+        assertEquals(
+            MeshTransportDecision.NoRoute(envelope.copy(ttl = 1)),
+            runSuspend { coordinator.handleIncoming(envelope, fromPeer = relay.id, atMillis = 17L) },
+        )
+        assertEquals(emptyList(), connection.sent)
+        assertEquals(MeshEvent.MessageNoRoute(envelope.id, 17L), session.snapshot().history.last())
+    }
+
+    @Test
+    fun propagatesCancellationInsteadOfReportingARadioFailure() {
+        val session = MeshSession(local)
+        val coordinator = MeshTransportCoordinator(session)
+        coordinator.attach(relay, FakeBlePeerConnection(
+            sendFailure = kotlin.coroutines.cancellation.CancellationException("cancelled"),
+        ))
+
+        assertFailsWith<kotlin.coroutines.cancellation.CancellationException> {
+            runSuspend { coordinator.handleIncoming(envelope(ttl = 2), atMillis = 18L) }
+        }
+        assertEquals(emptyList(), session.snapshot().history.filterIsInstance<MeshEvent.MessageSendFailed>())
+    }
+
     private fun envelope(
         destination: NodeId = NodeId("remote"),
         ttl: Int,
@@ -92,6 +176,7 @@ class MeshTransportCoordinatorTest {
     )
 
     private class FakeBlePeerConnection(
+        val sendFailure: Exception? = null,
         val incoming: MeshEnvelope = MeshEnvelope(
             id = MessageId("unset"),
             origin = NodeId("unset"),
@@ -104,6 +189,7 @@ class MeshTransportCoordinatorTest {
         val sent: MutableList<MeshEnvelope> = mutableListOf()
 
         override suspend fun send(envelope: MeshEnvelope) {
+            sendFailure?.let { throw it }
             sent += envelope
         }
 

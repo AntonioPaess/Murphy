@@ -1,6 +1,7 @@
 package com.murphy.core.transport
 
 import com.murphy.core.domain.ForwardDecision
+import com.murphy.core.domain.LinkFailureReason
 import com.murphy.core.domain.MeshEnvelope
 import com.murphy.core.domain.MeshSession
 import com.murphy.core.domain.MessageDropReason
@@ -51,13 +52,29 @@ public class MeshTransportCoordinator(
                     .sortedBy { (peerId, _) -> peerId.value }
                     .toList()
 
-                for ((_, activeConnection) in targets) {
-                    activeConnection.connection.send(decision.envelope)
+                if (targets.isEmpty()) {
+                    session.recordNoRoute(envelope.id, atMillis)
+                    return MeshTransportDecision.NoRoute(decision.envelope)
+                }
+
+                val accepted: MutableList<NodeId> = mutableListOf()
+                val failures: MutableList<PeerSendFailure> = mutableListOf()
+                for ((peerId, activeConnection) in targets) {
+                    try {
+                        activeConnection.connection.send(decision.envelope)
+                    } catch (failure: BleSendException) {
+                        failures += PeerSendFailure(peerId, failure.reason)
+                        session.recordSendFailed(envelope.id, peerId, failure.reason, atMillis)
+                        continue
+                    }
+                    accepted += peerId
+                    session.recordSendAccepted(envelope.id, peerId, atMillis)
                 }
 
                 MeshTransportDecision.Forwarded(
                     envelope = decision.envelope,
-                    peerIds = targets.map { (peerId, _) -> peerId },
+                    peerIds = accepted,
+                    failures = failures,
                 )
             }
 
@@ -79,6 +96,11 @@ public class MeshTransportCoordinator(
     )
 }
 
+public data class PeerSendFailure(
+    public val peerId: NodeId,
+    public val reason: LinkFailureReason,
+)
+
 public sealed interface MeshTransportDecision {
     public data class Delivered(
         public val envelope: MeshEnvelope,
@@ -87,6 +109,11 @@ public sealed interface MeshTransportDecision {
     public data class Forwarded(
         public val envelope: MeshEnvelope,
         public val peerIds: List<NodeId>,
+        public val failures: List<PeerSendFailure> = emptyList(),
+    ) : MeshTransportDecision
+
+    public data class NoRoute(
+        public val envelope: MeshEnvelope,
     ) : MeshTransportDecision
 
     public data class Dropped(

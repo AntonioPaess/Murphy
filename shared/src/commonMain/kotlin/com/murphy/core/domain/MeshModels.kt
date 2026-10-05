@@ -108,6 +108,24 @@ public sealed interface MeshEvent {
         public val reason: MessageDropReason,
         override val atMillis: Long,
     ) : MeshEvent
+
+    public data class MessageSendAccepted(
+        public val messageId: MessageId,
+        public val peerId: NodeId,
+        override val atMillis: Long,
+    ) : MeshEvent
+
+    public data class MessageSendFailed(
+        public val messageId: MessageId,
+        public val peerId: NodeId,
+        public val reason: LinkFailureReason,
+        override val atMillis: Long,
+    ) : MeshEvent
+
+    public data class MessageNoRoute(
+        public val messageId: MessageId,
+        override val atMillis: Long,
+    ) : MeshEvent
 }
 
 public data class MeshSnapshot(

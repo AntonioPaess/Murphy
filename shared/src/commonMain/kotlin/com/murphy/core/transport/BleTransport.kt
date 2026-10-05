@@ -2,6 +2,7 @@ package com.murphy.core.transport
 
 import com.murphy.core.domain.MeshEnvelope
 import com.murphy.core.domain.Peer
+import com.murphy.core.domain.LinkFailureReason
 
 /**
  * Platform-neutral contract implemented by Android Bluetooth and iOS CoreBluetooth adapters.
@@ -14,6 +15,9 @@ public interface BleTransport {
 }
 
 public interface BlePeerConnection {
+    /** Successful return means the adapter accepted the send, not end-to-end delivery.
+     * Expected radio failures must use BleSendException; cancellation must propagate.
+     */
     public suspend fun send(envelope: MeshEnvelope)
 
     public suspend fun receive(): MeshEnvelope
@@ -21,3 +25,7 @@ public interface BlePeerConnection {
     public suspend fun close()
 }
 
+public class BleSendException(
+    public val reason: LinkFailureReason,
+    cause: Throwable? = null,
+) : Exception("BLE send failed: $reason", cause)
