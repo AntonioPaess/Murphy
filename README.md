@@ -26,6 +26,30 @@ The project is currently in the conception/foundation phase and is planned as a 
 The competition thesis and release bar are documented in [docs/competition-thesis.md](docs/competition-thesis.md).
 The decentralized topology decision is documented in [docs/architecture.md](docs/architecture.md).
 
+## Design before implementation
+
+Every upcoming UI increment starts with a visual proposal for review, then
+implementation and verification. Update this README and the development vault
+with the change, rationale, checks and remaining limitations.
+
+The first proposal covers 16 mobile screens and their main offline/failure
+states. See the [screen plan](docs/design/README.md) and these review boards:
+
+![Getting started](docs/design/01-entrada.svg.png)
+![Mesh and connection states](docs/design/02-rede.svg.png)
+![Messaging and SOS](docs/design/03-mensagens-sos.svg.png)
+![History and session controls](docs/design/04-historico-ajustes.svg.png)
+
+These are **static product concepts, not implemented screens**. Group discovery,
+chat, SOS, identity and session controls still require implementation. Sending
+accepted by an adapter must never be presented as destination acknowledgement.
+
+[Figma workspace](https://www.figma.com/design/25gjH4lJelpFg5jJEhWICm): created on
+2026-10-05. The Starter MCP quota was exhausted before screen construction;
+browser import attempts were unstable. The complete boards have **not** been
+verified in Figma. The versioned SVG sources and PNG previews below are the
+verified deliverable for this increment, not a completed Figma prototype.
+
 ## Layout
 
 ```text
