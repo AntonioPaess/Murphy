@@ -111,7 +111,9 @@ class MeshTransportCoordinatorTest {
                 MeshEvent.MessageSendFailed(envelope.id, companion.id, LinkFailureReason.PEER_UNREACHABLE, 15L),
                 MeshEvent.MessageSendAccepted(envelope.id, relay.id, 15L),
             ),
-            session.snapshot().history.takeLast(2),
+            session.snapshot().history.filter {
+                it is MeshEvent.MessageSendFailed || it is MeshEvent.MessageSendAccepted
+            },
         )
     }
 

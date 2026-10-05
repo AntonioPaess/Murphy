@@ -8,11 +8,71 @@ import com.murphy.core.domain.MessageDropReason
 import com.murphy.core.domain.MessageId
 import com.murphy.core.domain.NodeId
 import com.murphy.core.domain.Peer
+import com.murphy.core.domain.RetryStopReason
 
 public class MeshTransportCoordinator(
     private val session: MeshSession,
+    private val retryPolicy: MeshRetryPolicy = MeshRetryPolicy(),
 ) {
     private val connections: MutableMap<NodeId, ActiveConnection> = linkedMapOf()
+    private val pending: MutableMap<SendKey, PendingMeshSend> = linkedMapOf()
+
+    public fun pendingSends(): List<PendingMeshSend> = pending.values.toList()
+
+    /** Called by the platform scheduler with the same clock used for incoming batches.
+     * Detached peers stay pending without consuming attempts. Cancellation preserves
+     * the current entry and propagates. No routing/TTL decision is repeated here.
+     */
+    public suspend fun retryPending(atMillis: Long): MeshRetryResult {
+        val accepted: MutableList<RetrySendAccepted> = mutableListOf()
+        val failures: MutableList<RetrySendFailure> = mutableListOf()
+        val exhausted: MutableList<PendingMeshSend> = mutableListOf()
+        val due = pending.values.filter { it.nextAttemptAtMillis <= atMillis }
+        for (entry in due) {
+            val connection = connections[entry.peerId]?.connection ?: continue
+            val key = SendKey(entry.envelope.id, entry.peerId)
+            try {
+                connection.send(entry.envelope)
+            } catch (failure: BleSendException) {
+                failures += RetrySendFailure(entry.envelope.id, entry.peerId, failure.reason)
+                session.recordSendFailed(entry.envelope.id, entry.peerId, failure.reason, atMillis)
+                val attempted = entry.copy(attempts = entry.attempts + 1)
+                if (!scheduleRetry(attempted, atMillis)) {
+                    exhausted += attempted
+                }
+                continue
+            }
+            pending.remove(key)
+            accepted += RetrySendAccepted(entry.envelope.id, entry.peerId)
+            session.recordSendAccepted(entry.envelope.id, entry.peerId, atMillis)
+        }
+        return MeshRetryResult(accepted, failures, exhausted)
+    }
+
+    private fun scheduleRetry(entry: PendingMeshSend, atMillis: Long): Boolean {
+        val key = SendKey(entry.envelope.id, entry.peerId)
+        val stopReason = when {
+            entry.attempts >= retryPolicy.maxAttempts -> RetryStopReason.ATTEMPTS_EXHAUSTED
+            key !in pending && pending.size >= retryPolicy.capacity -> RetryStopReason.QUEUE_FULL
+            else -> null
+        }
+        if (stopReason != null) {
+            pending.remove(key)
+            session.recordRetryStopped(entry.envelope.id, entry.peerId, stopReason, atMillis)
+            return false
+        }
+        // Saturate at Long.MAX_VALUE instead of wrapping a far-future deadline.
+        val nextAttempt = if (atMillis > Long.MAX_VALUE - retryPolicy.delayMillis) {
+            Long.MAX_VALUE
+        } else {
+            atMillis + retryPolicy.delayMillis
+        }
+        pending[key] = entry.copy(nextAttemptAtMillis = nextAttempt)
+        session.recordRetryScheduled(
+            entry.envelope.id, entry.peerId, entry.attempts, nextAttempt, atMillis,
+        )
+        return true
+    }
 
     public fun attach(peer: Peer, connection: BlePeerConnection) {
         connections[peer.id] = ActiveConnection(peer, connection)
@@ -65,6 +125,7 @@ public class MeshTransportCoordinator(
                     } catch (failure: BleSendException) {
                         failures += PeerSendFailure(peerId, failure.reason)
                         session.recordSendFailed(envelope.id, peerId, failure.reason, atMillis)
+                        scheduleRetry(PendingMeshSend(decision.envelope, peerId, 1, atMillis), atMillis)
                         continue
                     }
                     accepted += peerId
@@ -94,6 +155,8 @@ public class MeshTransportCoordinator(
         val peer: Peer,
         val connection: BlePeerConnection,
     )
+
+    private data class SendKey(val messageId: MessageId, val peerId: NodeId)
 }
 
 public data class PeerSendFailure(

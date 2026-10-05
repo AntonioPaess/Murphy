@@ -83,6 +83,27 @@ public class MeshSession(
         eventStore.append(MeshEvent.MessageNoRoute(messageId, atMillis))
     }
 
+    public fun recordRetryScheduled(
+        messageId: MessageId,
+        peerId: NodeId,
+        attempts: Int,
+        nextAttemptAtMillis: Long,
+        atMillis: Long,
+    ) {
+        eventStore.append(MeshEvent.MessageRetryScheduled(
+            messageId, peerId, attempts, nextAttemptAtMillis, atMillis,
+        ))
+    }
+
+    public fun recordRetryStopped(
+        messageId: MessageId,
+        peerId: NodeId,
+        reason: RetryStopReason,
+        atMillis: Long,
+    ) {
+        eventStore.append(MeshEvent.MessageRetryStopped(messageId, peerId, reason, atMillis))
+    }
+
     public fun handleIncoming(envelope: MeshEnvelope, atMillis: Long): ForwardDecision {
         val decision = router.accept(envelope)
         when (decision) {

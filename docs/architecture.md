@@ -52,6 +52,33 @@ reachability.
 `MessageSendAccepted` and `MessageSendFailed` events record adapter outcomes;
 `MessageNoRoute` records the absence of an eligible neighbour. Timestamps belong
 to the caller-supplied processing batch. Accepted sends are not destination
-acknowledgements. Delivery acknowledgements, durable storage and retry queues
-remain future work. A repeated envelope is still deduplicated, even after a
-failed send; retry support must use a separate pending-send path.
+acknowledgements. Delivery acknowledgements and durable storage remain future
+work. A repeated incoming envelope is still deduplicated, even after a failed
+send; transport retries use a separate pending-send path.
+
+## Bounded transport retries
+
+An expected failed send schedules the already-routed envelope for that message
+and peer. Defaults are three total attempts (including the initial attempt),
+one second between failures and 128 entries across the coordinator. On queue
+overflow, the new entry is rejected without evicting existing work.
+`MessageRetryScheduled` records the attempt count and deadline;
+`MessageRetryStopped` explains exhaustion or overflow.
+
+The platform calls `retryPending(atMillis)` serially with a consistent clock.
+Only due entries for attached peers are attempted. Disconnection retains an
+entry without spending the attempt budget; attaching a replacement connection
+for the same peer enables recovery. Success removes the entry. Cancellation or
+unexpected exceptions propagate while preserving the current queued entry.
+
+Retries bypass the router because the TTL was already reduced for that hop.
+They neither resend to peers that succeeded nor disable incoming deduplication.
+Failures and accepted sends in the retry result include both message ID and
+peer ID, allowing several pending messages for the same peer to be distinguished.
+
+The queue is in memory and has no age expiry yet. A detached entry can occupy
+capacity until that peer reconnects or the coordinator is discarded. Messages
+with no eligible peers are not queued, and the initial forwarding batch does
+not preserve unattempted sends if interrupted. Accepted sends do not await
+destination acknowledgements. These limits must be addressed before presenting
+the prototype as a reliable emergency messenger.

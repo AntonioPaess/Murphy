@@ -54,6 +54,11 @@ public enum class MessageDropReason {
     TTL_EXPIRED,
 }
 
+public enum class RetryStopReason {
+    ATTEMPTS_EXHAUSTED,
+    QUEUE_FULL,
+}
+
 public sealed interface MeshEvent {
     public val atMillis: Long
 
@@ -124,6 +129,21 @@ public sealed interface MeshEvent {
 
     public data class MessageNoRoute(
         public val messageId: MessageId,
+        override val atMillis: Long,
+    ) : MeshEvent
+
+    public data class MessageRetryScheduled(
+        public val messageId: MessageId,
+        public val peerId: NodeId,
+        public val attempts: Int,
+        public val nextAttemptAtMillis: Long,
+        override val atMillis: Long,
+    ) : MeshEvent
+
+    public data class MessageRetryStopped(
+        public val messageId: MessageId,
+        public val peerId: NodeId,
+        public val reason: RetryStopReason,
         override val atMillis: Long,
     ) : MeshEvent
 }

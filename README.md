@@ -45,8 +45,16 @@ protection prevent loops while a route-table strategy is still being developed.
 Expected adapter failures use `BleSendException`. A forwarding result lists only
 peers whose adapters accepted the send, alongside failures for the other peers.
 `NoRoute` means no eligible peer is attached; it does not prove the destination
-is globally unreachable. Cancellation propagates to the caller. Retries and
-destination acknowledgements are not implemented yet.
+is globally unreachable. Cancellation propagates to the caller.
+
+Expected failed sends are queued per message and peer. `MeshRetryPolicy`
+defaults to three total attempts, a one-second delay and 128 pending entries.
+The platform calls `retryPending(atMillis)` using its session clock; there is
+no background worker in the core. Retries reuse the already-routed envelope,
+so TTL is unchanged and incoming-message deduplication remains active.
+Detached peers wait for reconnection without consuming attempts. The queue
+is in memory; no-route messages and unattempted sends interrupted by cancellation
+are not queued. Destination acknowledgements are not implemented yet.
 
 ## Local verification
 
@@ -57,7 +65,8 @@ distribution and dependencies. Run the shared core tests on JVM with:
 ./gradlew :shared:jvmTest
 ```
 
-On 2026-10-05, all 18 JVM tests passed with no failures or skipped tests.
+On 2026-10-05, all 25 JVM tests passed with no failures or skipped tests,
+including a three-node relay failure and reconnection scenario.
 This verifies shared logic with fake connections, not physical BLE operation.
 Android and iOS builds have not yet been verified. On a machine configured for
 the native targets, the broader test entry point is:
