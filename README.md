@@ -32,13 +32,17 @@ Every upcoming UI increment starts with a visual proposal for review, then
 implementation and verification. Update this README and the development vault
 with the change, rationale, checks and remaining limitations.
 
-The first proposal covers 16 mobile screens and their main offline/failure
-states. See the [screen plan](docs/design/README.md) and these review boards:
+The current premium proposal covers 16 mobile screens and their main
+offline/failure states. See the [premium direction](docs/design/premium/README.md)
+and [screen plan](docs/design/README.md). The earlier green proposal is preserved
+for comparison.
 
-![Getting started](docs/design/01-entrada.svg.png)
-![Mesh and connection states](docs/design/02-rede.svg.png)
-![Messaging and SOS](docs/design/03-mensagens-sos.svg.png)
-![History and session controls](docs/design/04-historico-ajustes.svg.png)
+![Premium overview](docs/design/premium/00-premium-overview.svg.png)
+
+Complete review boards: [onboarding](docs/design/premium/01-entrada.svg.png),
+[network](docs/design/premium/02-rede.svg.png),
+[messaging and SOS](docs/design/premium/03-mensagens-sos.svg.png),
+[history and settings](docs/design/premium/04-historico-ajustes.svg.png).
 
 These are **static product concepts, not implemented screens**. Group discovery,
 chat, SOS, identity and session controls still require implementation. Sending

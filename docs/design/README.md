@@ -1,6 +1,10 @@
-# Murphy — proposta visual v0.1
+# Murphy — propostas visuais
 
 Data: 2026-10-05. Estado: proposta para revisão; nenhuma tela implementada.
+
+Direção atual: [v0.2 premium](premium/README.md), solicitada pelo usuário com
+Revolut como referência de acabamento. As pranchas abaixo preservam a v0.1
+verde para comparação; a nova versão revisa todas as 16 telas.
 
 ## Entrega e pendência
 
