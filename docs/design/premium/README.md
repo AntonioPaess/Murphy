@@ -1,13 +1,22 @@
 # Murphy — direção premium v0.2
 
 2026-10-05 · 16 telas conceituais · Android como referência de interação.
-Não há alteração de UI funcional, adapters BLE ou protocolo neste incremento.
+As pranchas são conceitos estáticos, não evidência de rádio ou protocolo funcional.
+
+Incremento nativo 2026-10-14: hosts Android Compose/iPhone SwiftUI implementam
+um subconjunto com navegação real e estado demo compartilhado em KMP. Grupo
+apenas local, zero peers, rascunhos não enviados, atividade em memória, ajustes
+e prévia SOS confirmada. Fontes nativas com text scaling substituem a fonte
+provisória do mockup; a paleta premium permanece. Ver [testes](../../testing.md).
+Figma editável segue pendente: primeira escrita bloqueada pela cota Starter,
+editor web carregando, nenhuma publicação ou compra de plano.
 
 Atualização 2026-10-14: todo texto de interface próprio do app agora está em
 inglês, inclusive avisos e erros; nomes próprios/conteúdo do usuário não são
 traduzidos. `node scripts/design-copy.mjs` valida as nove pranchas SVG (710 textos)
 contra o catálogo `docs/design/english-copy.json`. Prévias PNG regeneradas.
-Expiração de reenvios em 60 segundos é implementada no núcleo; a UI segue proposta.
+Expiração de reenvios em 60 segundos é implementada no núcleo; o demo nativo
+não usa um adapter de rádio nem apresenta fila real como entrega.
 
 ## Intenção
 

@@ -1,5 +1,7 @@
 package com.murphy.core.domain
 
+import kotlin.jvm.JvmInline
+
 @JvmInline
 public value class NodeId(public val value: String)
 

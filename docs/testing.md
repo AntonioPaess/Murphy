@@ -1,143 +1,184 @@
 # Murphy — implementation status and testing
 
-Updated 2026-10-14. UI language: **English**.
+Updated 2026-10-14. App-owned UI language: **English**.
 
-## What exists today
+## Implementation boundary
 
-| Area | Implemented | Evidence / limitation |
+| Area | Exists | Limitation |
 | --- | --- | --- |
-| KMP foundation | Android library, JVM, iOS device/simulator targets; Gradle wrapper | JVM compiled; native targets not validated |
-| Domain | Peers, message IDs/envelopes, connection states and local session events | Unit tests, no real radio |
-| Routing | Hop TTL, deduplication, destination delivery in a local session | Not a remote delivery ACK |
-| Mesh simulation | Deterministic topology/relay loss/alternative paths | Simulation, not route discovery on devices |
-| Transport coordinator | Bounded flooding; excludes incoming peer; isolated expected send failures | Fake adapters; calls must be serialized |
-| Retry queue | Per message/peer, 3 total attempts, 1-second delay, capacity 128 | In memory; platform scheduler required |
-| Queue age | 60-second local lifetime, no extension on retry, detached-peer expiry, capacity reclamation | Explicit caller-driven cleanup; not wire-message age |
-| History | Replaceable event store, default in memory | Not durable storage |
-| Design | 16 premium screen concepts; original proposal retained; English SVG/PNG boards | Static assets, not executable screens; Figma page currently empty |
-| App packages | **Not implemented** | No Android app host/APK or iOS host/IPA |
+| KMP core | Routing, TTL/deduplication, relay simulator, transport/retry/60-second expiry | Fake adapters; serialized caller-driven scheduler; memory only |
+| Shared preview | One Kotlin `PreviewSession` consumed by Android and Swift | Local group, 50 unsent drafts, 100 events, SOS preview; no radio or durable storage |
+| Android app | Compose, ViewModel, premium English UI, instrumentation tests | Demo host, API 26+ |
+| iPhone app | SwiftUI, native tabs/navigation/forms, KMP framework build phase, UI tests | Demo host, iOS 16+; Apple Silicon simulator and arm64 device |
+| Design | Graphite/white/cobalt; native fonts/text scaling; English SVG/PNG references | Native subset of 16 static concepts, not a completed Figma implementation |
+| Figma | Empty workspace; metadata/font/library discovery succeeded | First write hit Starter quota; web canvas did not load. No publication or paid upgrade |
+| Real messenger | **Not implemented** | BLE, discovery/groups, wire protocol, ACK, persistence, security/background and transmitted SOS pending |
 
-## Run the checks that are available now
+## Evidence
 
-From the repository root, with JDK 21:
+On 2026-10-14, **35 shared tests passed on JVM and 35 on the iOS arm64 simulator**,
+zero failures/errors/skips. Five new preview-state tests cover name validation,
+bounded immutable drafts, user text preservation, explicitly non-transmitting
+SOS and exit/history bounds. The shared iPhone-device target also compiled.
+
+The iPhone simulator app compiled with KMP; **two XCUITests passed** on iPhone
+17/iOS 26.1. Group/history/SOS screenshots were exported and inspected. The
+debug Android APK/test APK were generated; **two Compose tests passed** on the
+Medium Phone Android 16/API 36.1 emulator after updating the test harness.
+These are virtual-device tests, not physical BLE validation.
+
+English design guard: **710 approved text nodes across nine SVG boards**.
+`plutil` accepted project/Info.plist; `xcodebuild -list` recognized Murphy.
+The complete iPhone-device arm64 app also built with signing disabled. This is
+an unsigned build, not installation on the user's iPhone or an IPA/TestFlight release.
+
+## Build prerequisites
+
+JDK 21; Android bytecode explicitly Java 17. Gradle **8.9**, official SHA-256
+pinned. Gradle 9.3.1 passed JVM tests but failed native framework configuration
+with pinned Kotlin 2.1.10 (`DefaultArtifactPublicationSet`). The first Android
+compile also exposed inconsistent Java/Kotlin targets; both were corrected.
+The first native compile also caught a missing explicit
+`kotlin.jvm.JvmInline` import in the common ID models; JVM default imports had
+masked it. The common source now imports the optional-expect annotation explicitly.
+The first Android UI test failed in old Espresso's reflective InputManager call,
+before accessing the app. Espresso 3.7.0/runner 1.7.0/JUnit extension 1.3.0 replace
+that unsupported harness path; see the [official AndroidX Test changelog](https://developer.android.com/jetpack/androidx/releases/test).
+Screenshot review also exposed a System UI ANR in the headless/software-GPU
+emulator. Cold restart with host GPU cleared that environment issue, without
+wiping the AVD. The capture helper now requires Murphy to be the active window
+so a passing semantic test cannot publish a screenshot hidden by a system dialog.
+
+Set `ANDROID_HOME` or untracked `local.properties` with
+`sdk.dir=/absolute/path/to/Android/sdk`. Platform 35/Build Tools 34 were installed
+by Gradle using pre-existing accepted SDK license files. No new agreement was
+accepted for the user. Do not change compileSdk to hide missing SDK packages.
+
+iPhone: Apple Silicon Mac, Xcode, JDK 21. First builds download Kotlin/Native and
+dependencies. Compatibility with the installed Xcode SDK must be tested.
+No signing identity/account is checked in. Use offline Gradle only after caching.
+
+## Shared checks
 
 ```sh
 ./gradlew :shared:jvmTest
 node scripts/design-copy.mjs
 ```
 
-Use `--offline --no-daemon` on Gradle only when dependencies are already cached.
-The first online run downloads the wrapper/dependencies. Node uses no packages
-for copy verification. JVM results: `shared/build/reports/tests/jvmTest/index.html`.
+Report: `shared/build/reports/tests/jvmTest/index.html`. The design-copy guard
+does not check all native/OS strings. Native app labels, errors and accessibility
+text are English; user content stays unchanged. OS keyboard/dialogs may follow
+device language.
 
-On 2026-10-14: **30 JVM tests passed**, zero failures/errors/skips; **710 English
-text nodes** verified across nine SVG boards. New tests cover exact expiry,
-detached peers, retry interval longer than lifetime, reconnection at expiry,
-non-extending deadlines, reclaimed capacity, untrusted remote creation time and
-overflow-safe deadlines. Existing tests cover TTL, duplicates, relay recovery,
-partial failures, cancellation and attempt/capacity limits.
+## Android
 
-The approved copy catalog covers app-owned design text. It is not an automatic
-English detector, and it does not translate user names or user-written messages.
-Future Android/iOS accessibility labels, permission rationale and notifications
-must also use English; native OS permission dialogs may follow the OS language.
-
-## Android: library checks, not installation
-
-1. Open the repository in Android Studio and select JDK 21 for Gradle.
-2. In SDK Manager, install **Android SDK Platform 35**, matching `compileSdk`.
-   Allow the required build tools/dependencies to resolve on the first run.
-3. Set `ANDROID_HOME` to your actual SDK directory, or create untracked
-   `local.properties` with `sdk.dir=/absolute/path/to/Android/sdk`.
-4. Run:
+Open the repository in Android Studio, select JDK 21, **androidApp**, and an
+emulator/authorized phone, then Run. CLI build/test:
 
 ```sh
-./gradlew :shared:assembleDebug :shared:testDebugUnitTest
+./gradlew :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest
+./gradlew :androidApp:connectedDebugAndroidTest
 ```
 
-This produces/tests a library. An AAR cannot be installed on a phone like an APK.
-The local attempt failed with **SDK location not found**. API 35 is also absent
-from this environment's installed SDK platforms. Neither native check is claimed
-as passed. These setup issues were recorded, not solved by silently upgrading
-the project's SDK or installing system packages.
+Select a test-only emulator: the connected test task installs/runs on connected
+targets. Debug APK: `androidApp/build/outputs/apk/debug/androidApp-debug.apk`.
+Report: `androidApp/build/reports/androidTests/connected/debug/index.html`.
+This is a test APK, not a signed store release.
 
-### Physical Android flow — after the app host exists
+The tests save group/chat PNG captures in the target app's cache. The connected
+task cleans up APK/cache afterwards; captures were exported using a direct
+instrumentation run of the same APKs on the test-only emulator. Versioned
+captures are in `docs/screenshots/`. Do not select a physical phone unintentionally.
+With the test APKs still installed and the screenshot files present, export
+unchanged PNGs using `node scripts/export-android-screenshots.mjs emulator-5554`
+(replace with your actual test-emulator serial). The script refuses physical
+device serials and reads only this demo app's two known screenshot files.
 
-Add the Android application module, UI and BLE adapter first. Then connect the
-phone by USB, enable Developer options/USB debugging yourself, accept the
-computer's debugging authorization, select the phone and the application run
-configuration in Android Studio, and press Run. Disable debugging again when
-you no longer need it. Follow the [official Android device guide](https://developer.android.com/studio/run/device).
-This is a future procedure, not something this commit can run on a phone.
+For a physical Android, enable USB debugging, authorize this computer and select
+the phone yourself; disable debugging afterwards if not needed. See the
+[official guide](https://developer.android.com/studio/run/device).
+The demo requests no Bluetooth, location or Internet permissions.
 
-## iPhone: shared-core checks, not installation
+## iPhone
 
-On an Apple Silicon Mac with Xcode and a compatible Kotlin/Native toolchain:
+Open `iosApp/Murphy.xcodeproj`, select **Murphy**, choose an iPhone simulator,
+then Run. A build phase generates static `Shared.framework` for selected SDK
+and Debug/Release, using `JAVA_HOME` or locating JDK 21. Script sandboxing is
+disabled for this target because Gradle needs its dependency cache.
 
 ```sh
-./gradlew :shared:compileKotlinIosArm64
-./gradlew :shared:iosSimulatorArm64Test
+xcodebuild -project iosApp/Murphy.xcodeproj -scheme Murphy \
+  -configuration Debug -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath iosApp/DerivedData CODE_SIGNING_ALLOWED=NO build
 ```
 
-These task names were confirmed in this repository. They compile a Kotlin library
-and run native common tests, respectively; they do not create an installable iOS
-application. Kotlin/Native artifacts/dependencies need preparation, and the first
-run may download them. The local Kotlin/Native cache is absent. Xcode and iPhone
-simulator runtimes were detected, but **native compilation/tests were not run**.
-Check compatibility with the pinned Kotlin 2.1.10 rather than assuming the newest
-Xcode works with it. For an Intel Mac, inspect `:shared:tasks --all` and use the
-configured `iosX64` test target instead.
+List actual IDs using `xcrun simctl list devices available`; replace the
+placeholder below with your selected simulator UDID:
 
-The repository also lacks framework export configuration and an Xcode app host.
-See [Kotlin native binaries](https://kotlinlang.org/docs/multiplatform/multiplatform-build-native-binaries.html)
-and [multiplatform tests](https://kotlinlang.org/docs/multiplatform/multiplatform-run-tests.html).
+```sh
+xcodebuild -project iosApp/Murphy.xcodeproj -scheme Murphy \
+  -configuration Debug -destination 'id=YOUR_SIMULATOR_UDID' \
+  -derivedDataPath iosApp/DerivedData CODE_SIGNING_ALLOWED=NO test
+```
 
-### Physical iPhone flow — after the app host exists
+UI tests keep screenshots in the result bundle. `SKIP_KOTLIN_BUILD=YES` is only
+for a matching, already-built/current framework. The app host configures arm64
+simulators, not Intel. No running-app network backend is used.
 
-Create/integrate the app host and shared framework, then implement UI/CoreBluetooth
-and Bluetooth permission descriptions in English. In Xcode, configure the app's
-Signing & Capabilities with your team, connect/pair the iPhone, complete any Trust
-and Developer Mode prompts yourself, select it as the run destination and Run.
-Follow [Apple's physical-device instructions](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices).
-Simulator unit tests are not evidence of a physical BLE link; real radio tests
-must use physical devices. No signing identity or device settings were changed.
+For a physical iPhone, choose your team in Signing & Capabilities, pair the
+device and complete Trust/Developer Mode yourself. No IPA/TestFlight release is
+provided. See [Apple's guide](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices).
+Simulator tests are not physical BLE evidence.
 
-## Physical acceptance checklist — blocked until hosts/adapters exist
+Optional shared native checks: `./gradlew :shared:compileKotlinIosArm64` and
+`./gradlew :shared:iosSimulatorArm64Test`.
 
-Use an Android and an iPhone for cross-platform direct messaging. **At least
-three physical devices** are needed for a sender → relay → receiver scenario.
-Use a developer-controlled topology/test transport mode to prevent a direct
-sender/receiver shortcut, rather than inferring a relay solely from distance.
+## What to test in both demos
 
-| Check | Expected result |
+1. Welcome shows **DEMO MODE · Bluetooth not connected** and emergency warning.
+2. Enter **Your name** and **Group name**; empty inputs cannot proceed. Names
+   over 40 UTF-16 units return the shared English error.
+3. Group shows **0 direct peers**. Network explains no scanning/advertising,
+   connection, GPS or distance measurement.
+4. Save a Chat draft: **Not sent · demo only**, never Sent/Delivered/ACK.
+   Empty/over-1,000-unit drafts and the 51st draft are rejected.
+5. History shows local demo events newest first; iPhone rows open details.
+6. Preview SOS: cancel, then confirm. No alert sent/nobody alerted; close it.
+7. Settings clears drafts. Leaving requires confirmation and clears identity/
+   drafts. Force-stop/relaunch loses state by design (track 5 is pending).
+   Android rotation retains ViewModel state.
+8. Device language Portuguese: app-owned labels remain English; typed content
+   is unchanged. Native OS components may be localized.
+9. Try large text, screen readers, landscape, narrow width and keyboard. Record
+   clipping/focus/tap-target/outdoor contrast issues. Native scaling and labels
+   are a baseline, not accessibility certification.
+
+## Physical acceptance — blocked until radio implementation
+
+Android+iPhone suffice for direct radio; **three physical devices** for a relay.
+Prevent the direct shortcut with a developer-controlled topology; distance alone
+does not prove sender → relay → receiver.
+
+Available to the user: an iPhone 16 Pro and multiple Android phones at work
+(confirmed 2026-10-14). Plan: Android ↔ iPhone direct in both directions, then
+Android → iPhone relay → Android and iPhone → Android relay → Android, with
+the shortcut explicitly disabled. These devices have not been connected or
+tested by this build; the user still needs to pair/authorize them.
+
+| Check | Expected result after implementation |
 | --- | --- |
-| UI language with phone set to Portuguese | App-owned labels, alerts, help, accessibility text and notifications remain English |
-| Permission denied / Bluetooth off | Clear English state and a recovery path; no false connected status |
-| No internet / cellular unavailable, Bluetooth still on | Peer transport still functions; no server requirement |
-| Send to a direct peer | Receiver displays the message; adapter acceptance alone is never “Delivered” |
-| Sender → relay → receiver | Message reaches destination and is delivered once per session |
-| Relay/peer disconnects | Other eligible links are still attempted; eligible pending sends stay visible |
-| Reconnect before expiry | Eligible retry sends the already-routed envelope without another TTL decrement |
-| Remain disconnected past 60 seconds and tick cleanup | `EXPIRED` event, queue slot reclaimed, no stale send after reconnection |
-| Duplicate packet / TTL exhausted | No duplicate delivery; exhausted forwarding is dropped |
-| Queue full / attempts exhausted | Explicit outcome, no unbounded retry loop |
-| SOS | Explicit group-only scope; no promise of rescue or receipt |
-| App restart/background/battery saver | Record current limitations; do not claim persistence/background support until implemented |
-| Large fonts / screen reader / outdoors | No clipping, usable focus/order, legible states and adequately sized controls |
+| Permission denied/Bluetooth off | English recovery path, no false connection |
+| No internet/cellular; Bluetooth on | No server requirement |
+| Direct/relay send | Display once; destination ACK, not adapter acceptance, permits receipt state |
+| Disconnect/reconnect | Other links tried; eligible retries preserve TTL |
+| Disconnected past 60-second age | Caller-driven expiry once; no stale send after reconnect |
+| Duplicate/TTL/queue limits | Explicit bounded outcomes, no loops/unbounded retries |
+| Group/authentication mismatch | Cannot inject content or spoof ACK |
+| Restart | Durable recovery only after track 5, no stale sends |
+| Background/battery saver | Measure limitations/energy; no unrestricted BLE promise |
+| SOS | Group-only, meaningful receipt state, no automatic rescue/location |
+| Accessibility/outdoors | Usable large fonts/screen readers, warnings not color-only |
 
-## Remaining implementation, in order
-
-1. Complete editable Figma publication and review the English design.
-2. Android application and iOS app host/shared framework integration; implement
-   the premium UI with English resource/accessibility/notification text.
-3. Native BLE scanning/advertising/connect/send/receive adapters and scheduler.
-4. Wire protocol, fragmentation/reassembly, peer identity and group discovery.
-5. Destination ACK protocol (with timeout/deduplication), durable history/queue,
-   restart recovery and preservation of interrupted initial work/no-route drafts.
-6. Authentication/encryption, privacy model, background limits and battery work.
-7. SOS workflow, meaningful delivery state, real cross-platform/three-device
-   tests and accessible outdoor UX.
-8. Reproducible native CI/builds, signed test packages and competition demo.
-
-This is not yet an emergency-ready messenger. The app and radio paths remain
-unimplemented even though shared logic has passing tests.
+Tracks 3–7 remain pending; see [delivery plan](implementation-plan.md).
+Murphy Demo is not an emergency-ready messenger and cannot guarantee delivery.

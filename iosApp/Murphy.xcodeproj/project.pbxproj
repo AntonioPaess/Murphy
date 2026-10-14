@@ -1,0 +1,110 @@
+// !$*UTF8*$!
+{
+    archiveVersion = 1;
+    classes = {};
+    objectVersion = 56;
+    objects = {
+        A10000000000000000000001 = {isa = PBXBuildFile; fileRef = A20000000000000000000001; };
+        A10000000000000000000002 = {isa = PBXBuildFile; fileRef = A20000000000000000000002; };
+        A10000000000000000000003 = {isa = PBXBuildFile; fileRef = A20000000000000000000005; };
+        A20000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MurphyApp.swift; sourceTree = "<group>"; };
+        A20000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+        A20000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+        A20000000000000000000004 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Murphy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+        A20000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewFlowTests.swift; sourceTree = "<group>"; };
+        A20000000000000000000006 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MurphyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+        A30000000000000000000001 = {isa = PBXGroup; children = (A30000000000000000000002, A30000000000000000000003, A30000000000000000000004); sourceTree = "<group>"; };
+        A30000000000000000000002 = {isa = PBXGroup; children = (A20000000000000000000001, A20000000000000000000002, A20000000000000000000003); path = Murphy; sourceTree = "<group>"; };
+        A30000000000000000000003 = {isa = PBXGroup; children = (A20000000000000000000004, A20000000000000000000006); name = Products; sourceTree = "<group>"; };
+        A30000000000000000000004 = {isa = PBXGroup; children = (A20000000000000000000005); path = MurphyUITests; sourceTree = "<group>"; };
+        A40000000000000000000001 = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = A80000000000000000000002;
+            buildPhases = (A50000000000000000000001, A50000000000000000000002, A50000000000000000000003, A50000000000000000000004);
+            buildRules = (); dependencies = (); name = Murphy;
+            productName = Murphy; productReference = A20000000000000000000004;
+            productType = "com.apple.product-type.application";
+        };
+        A40000000000000000000002 = {
+            isa = PBXNativeTarget; buildConfigurationList = A80000000000000000000003;
+            buildPhases = (A50000000000000000000005, A50000000000000000000006, A50000000000000000000007);
+            buildRules = (); dependencies = (A90000000000000000000002); name = MurphyUITests;
+            productName = MurphyUITests; productReference = A20000000000000000000006;
+            productType = "com.apple.product-type.bundle.ui-testing";
+        };
+        A50000000000000000000001 = {
+            isa = PBXShellScriptBuildPhase; alwaysOutOfDate = 1;
+            buildActionMask = 2147483647; files = (); inputPaths = (); outputPaths = ();
+            name = "Build shared Kotlin framework";
+            runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh;
+            shellScript = "set -eu\nif [ \"${SKIP_KOTLIN_BUILD:-NO}\" = \"YES\" ]; then exit 0; fi\nif [ -z \"${JAVA_HOME:-}\" ]; then export JAVA_HOME=$(/usr/libexec/java_home -v 21); fi\ncase \"$SDK_NAME\" in iphoneos*) target=IosArm64 ;; iphonesimulator*) target=IosSimulatorArm64 ;; *) echo 'Unsupported SDK'; exit 1 ;; esac\ncase \"$CONFIGURATION\" in Release) variant=Release ;; *) variant=Debug ;; esac\ncd \"$SRCROOT/..\"\n./gradlew \":shared:link${variant}Framework${target}\" --no-daemon\n";
+        };
+        A50000000000000000000002 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001); runOnlyForDeploymentPostprocessing = 0; };
+        A50000000000000000000003 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        A50000000000000000000004 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000002); runOnlyForDeploymentPostprocessing = 0; };
+        A50000000000000000000005 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000003); runOnlyForDeploymentPostprocessing = 0; };
+        A50000000000000000000006 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        A50000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        A60000000000000000000001 = {
+            isa = PBXProject;
+            attributes = {BuildIndependentTargetsInParallel = YES; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; TargetAttributes = {A40000000000000000000001 = {CreatedOnToolsVersion = 16.0; }; }; };
+            buildConfigurationList = A80000000000000000000001;
+            compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0;
+            knownRegions = (en, Base); mainGroup = A30000000000000000000001;
+            productRefGroup = A30000000000000000000003; projectDirPath = ""; projectRoot = "";
+            targets = (A40000000000000000000001, A40000000000000000000002);
+        };
+        A70000000000000000000001 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+            SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; CLANG_ENABLE_MODULES = YES;
+            SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = dwarf;
+        }; };
+        A70000000000000000000002 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
+            SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; CLANG_ENABLE_MODULES = YES;
+            SWIFT_OPTIMIZATION_LEVEL = "-O"; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+        }; };
+        A70000000000000000000003 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+            CODE_SIGN_STYLE = Automatic; PRODUCT_BUNDLE_IDENTIFIER = com.murphy.app;
+            PRODUCT_NAME = "$(TARGET_NAME)"; INFOPLIST_FILE = Murphy/Info.plist;
+            SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; ENABLE_USER_SCRIPT_SANDBOXING = NO;
+            ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+            GENERATE_INFOPLIST_FILE = NO; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+            ARCHS = arm64; KOTLIN_TARGET = iosArm64; "KOTLIN_TARGET[sdk=iphonesimulator*]" = iosSimulatorArm64;
+            KOTLIN_FRAMEWORK_CONFIGURATION = debug;
+            FRAMEWORK_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../shared/build/bin/$(KOTLIN_TARGET)/$(KOTLIN_FRAMEWORK_CONFIGURATION)Framework");
+            OTHER_LDFLAGS = ("$(inherited)", "-framework", Shared, "-lc++");
+            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+        }; };
+        A70000000000000000000004 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
+            CODE_SIGN_STYLE = Automatic; PRODUCT_BUNDLE_IDENTIFIER = com.murphy.app;
+            PRODUCT_NAME = "$(TARGET_NAME)"; INFOPLIST_FILE = Murphy/Info.plist;
+            SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; ENABLE_USER_SCRIPT_SANDBOXING = NO;
+            ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+            GENERATE_INFOPLIST_FILE = NO; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+            ARCHS = arm64; KOTLIN_TARGET = iosArm64; "KOTLIN_TARGET[sdk=iphonesimulator*]" = iosSimulatorArm64;
+            KOTLIN_FRAMEWORK_CONFIGURATION = release;
+            FRAMEWORK_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../shared/build/bin/$(KOTLIN_TARGET)/$(KOTLIN_FRAMEWORK_CONFIGURATION)Framework");
+            OTHER_LDFLAGS = ("$(inherited)", "-framework", Shared, "-lc++");
+            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+        }; };
+        A80000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (A70000000000000000000001, A70000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        A80000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (A70000000000000000000003, A70000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        A70000000000000000000005 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+            CODE_SIGN_STYLE = Automatic; PRODUCT_BUNDLE_IDENTIFIER = com.murphy.app.uitests;
+            PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES;
+            SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_TARGET_NAME = Murphy;
+            IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+            ARCHS = arm64; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+        }; };
+        A70000000000000000000006 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
+            CODE_SIGN_STYLE = Automatic; PRODUCT_BUNDLE_IDENTIFIER = com.murphy.app.uitests;
+            PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES;
+            SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_TARGET_NAME = Murphy;
+            IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+            ARCHS = arm64; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+        }; };
+        A80000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (A70000000000000000000005, A70000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        A90000000000000000000001 = {isa = PBXContainerItemProxy; containerPortal = A60000000000000000000001; proxyType = 1; remoteGlobalIDString = A40000000000000000000001; remoteInfo = Murphy; };
+        A90000000000000000000002 = {isa = PBXTargetDependency; target = A40000000000000000000001; targetProxy = A90000000000000000000001; };
+    };
+    rootObject = A60000000000000000000001;
+}

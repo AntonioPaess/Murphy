@@ -1,6 +1,14 @@
 # Murphy — propostas visuais
 
-Data: 2026-10-05. Estado: proposta para revisão; nenhuma tela implementada.
+Data das pranchas: 2026-10-05. Estado das pranchas: proposta estática para revisão.
+
+Atualização nativa 2026-10-14: hosts Compose/SwiftUI implementam um subconjunto
+da direção premium, com navegação e estado demo compartilhado em KMP. Grupo local,
+rede vazia, rascunhos não enviados, histórico em memória, ajustes e prévia SOS.
+Não há descoberta/radio/entrega reais. Ver [guia de testes](../testing.md).
+Fontes nativas preservam ampliação de texto; nenhuma fonte externa é exigida.
+Figma continua vazio: a primeira escrita voltou a atingir a cota Starter e o
+canvas web não terminou de carregar; não houve publicação nem upgrade pago.
 
 Atualização 2026-10-14: todas as pranchas, inclusive a proposta inicial, agora
 usam inglês no texto de interface. O idioma do produto é inglês; documentação
