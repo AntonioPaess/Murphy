@@ -102,3 +102,22 @@ the native targets, the broader test entry point is:
 ```bash
 ./gradlew :shared:allTests
 ```
+
+## Android app
+
+`androidApp` is the installable Android entry point. It displays the current
+shared-core state and clearly identifies Bluetooth discovery, messaging and SOS
+as not implemented; it does not claim to scan or communicate with nearby
+devices. Build a debug APK with:
+
+```bash
+./gradlew :androidApp:assembleDebug
+```
+
+The APK is written to
+`androidApp/build/outputs/apk/debug/androidApp-debug.apk`. Install it on a
+connected Android device with:
+
+```bash
+adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
+```

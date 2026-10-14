@@ -6,7 +6,11 @@ plugins {
 kotlin {
     explicitApi()
 
-    androidTarget()
+    androidTarget {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
     jvm()
     iosX64()
     iosArm64()
@@ -22,4 +26,9 @@ kotlin {
 android {
     namespace = "com.murphy.shared"
     compileSdk = 35
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
 }
