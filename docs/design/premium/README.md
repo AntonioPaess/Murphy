@@ -3,6 +3,12 @@
 2026-10-05 · 16 telas conceituais · Android como referência de interação.
 Não há alteração de UI funcional, adapters BLE ou protocolo neste incremento.
 
+Atualização 2026-10-14: todo texto de interface próprio do app agora está em
+inglês, inclusive avisos e erros; nomes próprios/conteúdo do usuário não são
+traduzidos. `node scripts/design-copy.mjs` valida as nove pranchas SVG (710 textos)
+contra o catálogo `docs/design/english-copy.json`. Prévias PNG regeneradas.
+Expiração de reenvios em 60 segundos é implementada no núcleo; a UI segue proposta.
+
 ## Intenção
 
 O usuário pediu acabamento mais premium, usando Revolut como referência.
@@ -20,7 +26,7 @@ Não é uma cópia: sem logos, imagens, fontes proprietárias ou telas do Revolu
 - Boas-vindas e pedido de ajuda ativo em grafite. SOS vermelho, sem diluir
   alertas na aparência premium. Gradientes decorativos não cobrem texto crítico.
 - Explicações de implementação passam às notas de revisão; mensagens do app
-  são curtas e em português. A ausência de confirmação permanece explícita.
+são curtas e em inglês. A ausência de confirmação permanece explícita.
 
 ## Pranchas
 
@@ -62,6 +68,9 @@ automática. Não há líder obrigatório. Nenhuma promessa de criptografia pron
 Nova consulta confirmou limite Starter; nenhuma escrita Figma foi feita nesta
 revisão. Prévia local não é um protótipo Figma publicado ou clicável. Não houve
 upgrade pago. A publicação de frames/componentes editáveis continua pendente.
+
+Em 2026-10-14, nova consulta de metadados funcionou e retornou uma página vazia.
+Não assumir que o limite anterior continua ativo ou que as telas foram publicadas.
 
 Cinco pranchas SVG renderizadas em PNG e inspecionadas; quatro cobrem as 16
 telas e uma destaca grupo/rede/chat/SOS. Formas, textos e ícones separados,

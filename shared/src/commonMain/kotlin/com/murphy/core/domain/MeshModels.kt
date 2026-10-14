@@ -57,6 +57,7 @@ public enum class MessageDropReason {
 public enum class RetryStopReason {
     ATTEMPTS_EXHAUSTED,
     QUEUE_FULL,
+    EXPIRED,
 }
 
 public sealed interface MeshEvent {

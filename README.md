@@ -12,6 +12,14 @@ The project is intentionally starting with the shared domain core before platfor
 - a shared transport coordinator that bridges BLE connections and routing decisions;
 - per-peer send outcomes, so a failed link does not stop attempts on other links.
 
+**Current delivery status:** this repository contains a shared library, tests and
+static design proposals, not an installable Android/iPhone app. There is no APK,
+IPA, app host or native BLE adapter yet. See the [status and testing guide](docs/testing.md).
+
+**Product language:** all app-owned UI text must be English, regardless of device
+language. The proposed screens are now in English, including errors and SOS
+warnings. User names and user-authored messages are not translated automatically.
+
 ## Project direction
 
 - Kotlin Multiplatform shared module;
@@ -53,6 +61,8 @@ accepted by an adapter must never be presented as destination acknowledgement.
 browser import attempts were unstable. The complete boards have **not** been
 verified in Figma. The versioned SVG sources and PNG previews below are the
 verified deliverable for this increment, not a completed Figma prototype.
+On 2026-10-14, metadata access worked again, but the page was empty. Complete
+Figma publication remains pending; it is not part of this commit's verified output.
 
 ## Layout
 
@@ -76,11 +86,18 @@ peers whose adapters accepted the send, alongside failures for the other peers.
 is globally unreachable. Cancellation propagates to the caller.
 
 Expected failed sends are queued per message and peer. `MeshRetryPolicy`
-defaults to three total attempts, a one-second delay and 128 pending entries.
+defaults to three total attempts, a one-second delay, 128 pending entries and
+a 60-second local pending-send lifetime from the first failed attempt.
 The platform calls `retryPending(atMillis)` using its session clock; there is
 no background worker in the core. Retries reuse the already-routed envelope,
 so TTL is unchanged and incoming-message deduplication remains active.
-Detached peers wait for reconnection without consuming attempts. The queue
+Detached peers wait for reconnection without consuming attempts, but expire
+at the same deadline. `expirePending(atMillis)` can reclaim stale work without
+sending; `retryPending` also expires it before selecting due work, and scheduling
+a failed send reclaims expired capacity. Expiry emits `RetryStopReason.EXPIRED`
+and is reported separately in `MeshRetryResult.expired`. There is no automatic
+timer: cleanup requires a platform call using the same consistent local clock.
+Remote creation timestamps do not control queue age. The queue
 is in memory; no-route messages and unattempted sends interrupted by cancellation
 are not queued. Destination acknowledgements are not implemented yet.
 
@@ -93,12 +110,25 @@ distribution and dependencies. Run the shared core tests on JVM with:
 ./gradlew :shared:jvmTest
 ```
 
-On 2026-10-05, all 25 JVM tests passed with no failures or skipped tests,
-including a three-node relay failure and reconnection scenario.
+On 2026-10-14, all 30 JVM tests passed with no failures or skipped tests,
+including a three-node relay failure/reconnection and pending expiry scenarios.
 This verifies shared logic with fake connections, not physical BLE operation.
-Android and iOS builds have not yet been verified. On a machine configured for
+Android assembly was attempted but blocked by SDK location configuration;
+the locally installed SDKs also lack API 35. Kotlin/Native is not prepared,
+so iOS compilation/tests remain unverified. On a machine configured for
 the native targets, the broader test entry point is:
 
 ```bash
 ./gradlew :shared:allTests
 ```
+
+Verify the approved English design copy with Node.js:
+
+```bash
+node scripts/design-copy.mjs
+```
+
+This checks 710 text nodes across nine SVG boards against
+`docs/design/english-copy.json`. It is a design-copy guard, not a localization
+system wired to a running application. See [docs/testing.md](docs/testing.md)
+for current commands and the future physical-device acceptance checklist.

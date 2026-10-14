@@ -63,12 +63,13 @@ and peer. Defaults are three total attempts (including the initial attempt),
 one second between failures and 128 entries across the coordinator. On queue
 overflow, the new entry is rejected without evicting existing work.
 `MessageRetryScheduled` records the attempt count and deadline;
-`MessageRetryStopped` explains exhaustion or overflow.
+`MessageRetryStopped` explains exhaustion, overflow or local age expiry.
 
 The platform calls `retryPending(atMillis)` serially with a consistent clock.
 Only due entries for attached peers are attempted. Disconnection retains an
-entry without spending the attempt budget; attaching a replacement connection
-for the same peer enables recovery. Success removes the entry. Cancellation or
+entry without spending the attempt budget until its expiry; attaching a replacement
+connection for the same peer enables recovery only before expiry. Success removes
+the entry. Cancellation or
 unexpected exceptions propagate while preserving the current queued entry.
 
 Retries bypass the router because the TTL was already reduced for that hop.
@@ -76,8 +77,22 @@ They neither resend to peers that succeeded nor disable incoming deduplication.
 Failures and accepted sends in the retry result include both message ID and
 peer ID, allowing several pending messages for the same peer to be distinguished.
 
-The queue is in memory and has no age expiry yet. A detached entry can occupy
-capacity until that peer reconnects or the coordinator is discarded. Messages
+The queue is in memory. Each entry expires 60 seconds after its first local
+failed send by default (`maxPendingAgeMillis`). The deadline never extends after
+another failure and does not use the remote `createdAtMillis`. Hop TTL and local
+queue lifetime are separate limits. Deadline addition saturates at `Long.MAX_VALUE`.
+
+`expirePending(atMillis)` removes entries at or past the deadline even for
+detached peers, records `EXPIRED` once per removed entry and returns them.
+`retryPending` expires all work before considering send deadlines; its `expired`
+list is separate from exhausted attempts. Scheduling a failed send also reclaims
+expired capacity before checking queue fullness. Cleanup is caller-driven, not
+an autonomous timer. `pendingSends()` remains an inspection snapshot; it does
+not sweep stale work. Use one consistent monotonic local clock for processing,
+retries and expiry, and serialize all calls. A backward clock can delay cleanup.
+
+Expiry drops stale queued attempts, not an in-flight send, and does not mark a
+destination delivered or erase session deduplication/history. Messages
 with no eligible peers are not queued, and the initial forwarding batch does
 not preserve unattempted sends if interrupted. Accepted sends do not await
 destination acknowledgements. These limits must be addressed before presenting

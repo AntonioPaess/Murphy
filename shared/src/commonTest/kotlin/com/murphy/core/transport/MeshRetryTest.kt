@@ -127,6 +127,8 @@ class MeshRetryTest {
         assertFailsWith<IllegalArgumentException> { MeshRetryPolicy(maxAttempts = 0) }
         assertFailsWith<IllegalArgumentException> { MeshRetryPolicy(delayMillis = 0) }
         assertFailsWith<IllegalArgumentException> { MeshRetryPolicy(capacity = 0) }
+        assertFailsWith<IllegalArgumentException> { MeshRetryPolicy(maxPendingAgeMillis = 0) }
+        assertFailsWith<IllegalArgumentException> { MeshRetryPolicy(maxPendingAgeMillis = -1) }
         val coordinator = MeshTransportCoordinator(MeshSession(local), MeshRetryPolicy(maxAttempts = 1))
         coordinator.attach(destination, FakeConnection(failure = BleSendException(LinkFailureReason.PEER_UNREACHABLE)))
         runSuspend { coordinator.handleIncoming(envelope, atMillis = 0L) }
@@ -162,6 +164,95 @@ class MeshRetryTest {
         })
         assertEquals(1, receiverSession.snapshot().history.filterIsInstance<MeshEvent.MessageDelivered>().size)
         assertTrue(relayCoordinator.pendingSends().isEmpty())
+    }
+
+    @Test
+    fun detachedEntriesExpireAtTheBoundaryWithoutAnotherSend() {
+        val session = MeshSession(local)
+        val coordinator = MeshTransportCoordinator(session, MeshRetryPolicy(maxPendingAgeMillis = 2_000L))
+        val connection = FakeConnection(failure = BleSendException(LinkFailureReason.PEER_UNREACHABLE))
+        coordinator.attach(destination, connection)
+        runSuspend { coordinator.handleIncoming(envelope, atMillis = 10L) }
+        val original = coordinator.pendingSends().single()
+        assertEquals(2_010L, original.expiresAtMillis)
+        coordinator.detach(destination.id)
+        assertTrue(coordinator.expirePending(2_009L).isEmpty())
+
+        val result = runSuspend { coordinator.retryPending(2_010L) }
+        assertEquals(listOf(original), result.expired)
+        assertTrue(result.accepted.isEmpty())
+        assertTrue(result.failures.isEmpty())
+        assertTrue(result.exhausted.isEmpty())
+        assertEquals(1, connection.attempts)
+        assertTrue(coordinator.pendingSends().isEmpty())
+        assertEquals(
+            MeshEvent.MessageRetryStopped(envelope.id, destination.id, RetryStopReason.EXPIRED, 2_010L),
+            session.snapshot().history.last(),
+        )
+        assertTrue(coordinator.expirePending(2_011L).isEmpty())
+        assertEquals(1, session.snapshot().history.filterIsInstance<MeshEvent.MessageRetryStopped>().size)
+    }
+
+    @Test
+    fun reconnectingAtExpiryDoesNotSendStaleWorkEvenBeforeTheRetryDeadline() {
+        val coordinator = MeshTransportCoordinator(
+            MeshSession(local), MeshRetryPolicy(delayMillis = 5_000L, maxPendingAgeMillis = 1_000L),
+        )
+        val connection = FakeConnection(failure = BleSendException(LinkFailureReason.PEER_UNREACHABLE))
+        coordinator.attach(destination, connection)
+        runSuspend { coordinator.handleIncoming(envelope, atMillis = 0L) }
+        coordinator.detach(destination.id)
+        val recovered = FakeConnection()
+        coordinator.attach(destination, recovered)
+        assertEquals(1, runSuspend { coordinator.retryPending(1_000L) }.expired.size)
+        assertEquals(0, recovered.attempts)
+    }
+
+    @Test
+    fun anotherFailureDoesNotExtendTheOriginalLifetime() {
+        val coordinator = MeshTransportCoordinator(
+            MeshSession(local), MeshRetryPolicy(maxAttempts = 10, maxPendingAgeMillis = 2_000L),
+        )
+        val connection = FakeConnection(failure = BleSendException(LinkFailureReason.PEER_UNREACHABLE))
+        coordinator.attach(destination, connection)
+        runSuspend { coordinator.handleIncoming(envelope, atMillis = 0L) }
+        runSuspend { coordinator.retryPending(1_000L) }
+        assertEquals(2_000L, coordinator.pendingSends().single().expiresAtMillis)
+        assertEquals(1, runSuspend { coordinator.retryPending(2_000L) }.expired.size)
+        assertEquals(2, connection.attempts)
+    }
+
+    @Test
+    fun expirationReclaimsCapacityBeforeSchedulingANewFailedSend() {
+        val session = MeshSession(local)
+        val coordinator = MeshTransportCoordinator(
+            session, MeshRetryPolicy(capacity = 1, maxPendingAgeMillis = 1_000L),
+        )
+        coordinator.attach(destination, FakeConnection(failure = BleSendException(LinkFailureReason.PEER_UNREACHABLE)))
+        runSuspend { coordinator.handleIncoming(envelope, atMillis = 0L) }
+        val next = envelope.copy(id = MessageId("new"))
+        runSuspend { coordinator.handleIncoming(next, atMillis = 1_000L) }
+        assertEquals(next.id, coordinator.pendingSends().single().envelope.id)
+        val stopped = session.snapshot().history.filterIsInstance<MeshEvent.MessageRetryStopped>()
+        assertEquals(listOf(RetryStopReason.EXPIRED), stopped.map { it.reason })
+    }
+
+    @Test
+    fun localDeadlineDoesNotTrustRemoteCreationTimeAndSaturatesWithoutOverflow() {
+        val coordinator = MeshTransportCoordinator(MeshSession(local))
+        coordinator.attach(destination, FakeConnection(failure = BleSendException(LinkFailureReason.PEER_UNREACHABLE)))
+        runSuspend { coordinator.handleIncoming(envelope.copy(createdAtMillis = Long.MAX_VALUE), atMillis = 50L) }
+        assertEquals(60_050L, coordinator.pendingSends().single().expiresAtMillis)
+
+        val farFuture = MeshTransportCoordinator(MeshSession(local))
+        val connection = FakeConnection(failure = BleSendException(LinkFailureReason.PEER_UNREACHABLE))
+        farFuture.attach(destination, connection)
+        runSuspend { farFuture.handleIncoming(envelope, atMillis = Long.MAX_VALUE - 10L) }
+        val pending = farFuture.pendingSends().single()
+        assertEquals(Long.MAX_VALUE, pending.expiresAtMillis)
+        assertEquals(Long.MAX_VALUE, pending.nextAttemptAtMillis)
+        assertEquals(1, runSuspend { farFuture.retryPending(Long.MAX_VALUE) }.expired.size)
+        assertEquals(1, connection.attempts)
     }
 
     private class FakeConnection(

@@ -19,11 +19,22 @@ public class MeshTransportCoordinator(
 
     public fun pendingSends(): List<PendingMeshSend> = pending.values.toList()
 
+    /** Removes expired local work even for detached peers. The platform owns the clock. */
+    public fun expirePending(atMillis: Long): List<PendingMeshSend> {
+        val expired = pending.values.filter { it.expiresAtMillis <= atMillis }
+        for (entry in expired) {
+            pending.remove(SendKey(entry.envelope.id, entry.peerId))
+            session.recordRetryStopped(entry.envelope.id, entry.peerId, RetryStopReason.EXPIRED, atMillis)
+        }
+        return expired
+    }
+
     /** Called by the platform scheduler with the same clock used for incoming batches.
-     * Detached peers stay pending without consuming attempts. Cancellation preserves
+     * Detached peers stay pending until expiry without consuming attempts. Cancellation preserves
      * the current entry and propagates. No routing/TTL decision is repeated here.
      */
     public suspend fun retryPending(atMillis: Long): MeshRetryResult {
+        val expired = expirePending(atMillis)
         val accepted: MutableList<RetrySendAccepted> = mutableListOf()
         val failures: MutableList<RetrySendFailure> = mutableListOf()
         val exhausted: MutableList<PendingMeshSend> = mutableListOf()
@@ -46,12 +57,15 @@ public class MeshTransportCoordinator(
             accepted += RetrySendAccepted(entry.envelope.id, entry.peerId)
             session.recordSendAccepted(entry.envelope.id, entry.peerId, atMillis)
         }
-        return MeshRetryResult(accepted, failures, exhausted)
+        return MeshRetryResult(accepted, failures, exhausted, expired)
     }
 
     private fun scheduleRetry(entry: PendingMeshSend, atMillis: Long): Boolean {
+        // Reclaim stale entries before checking capacity, including while peers are detached.
+        expirePending(atMillis)
         val key = SendKey(entry.envelope.id, entry.peerId)
         val stopReason = when {
+            entry.expiresAtMillis <= atMillis -> RetryStopReason.EXPIRED
             entry.attempts >= retryPolicy.maxAttempts -> RetryStopReason.ATTEMPTS_EXHAUSTED
             key !in pending && pending.size >= retryPolicy.capacity -> RetryStopReason.QUEUE_FULL
             else -> null
@@ -62,17 +76,16 @@ public class MeshTransportCoordinator(
             return false
         }
         // Saturate at Long.MAX_VALUE instead of wrapping a far-future deadline.
-        val nextAttempt = if (atMillis > Long.MAX_VALUE - retryPolicy.delayMillis) {
-            Long.MAX_VALUE
-        } else {
-            atMillis + retryPolicy.delayMillis
-        }
+        val nextAttempt = deadlineAfter(atMillis, retryPolicy.delayMillis)
         pending[key] = entry.copy(nextAttemptAtMillis = nextAttempt)
         session.recordRetryScheduled(
             entry.envelope.id, entry.peerId, entry.attempts, nextAttempt, atMillis,
         )
         return true
     }
+
+    private fun deadlineAfter(atMillis: Long, durationMillis: Long): Long =
+        if (atMillis > Long.MAX_VALUE - durationMillis) Long.MAX_VALUE else atMillis + durationMillis
 
     public fun attach(peer: Peer, connection: BlePeerConnection) {
         connections[peer.id] = ActiveConnection(peer, connection)
@@ -125,7 +138,13 @@ public class MeshTransportCoordinator(
                     } catch (failure: BleSendException) {
                         failures += PeerSendFailure(peerId, failure.reason)
                         session.recordSendFailed(envelope.id, peerId, failure.reason, atMillis)
-                        scheduleRetry(PendingMeshSend(decision.envelope, peerId, 1, atMillis), atMillis)
+                        scheduleRetry(
+                            PendingMeshSend(
+                                decision.envelope, peerId, 1, atMillis,
+                                expiresAtMillis = deadlineAfter(atMillis, retryPolicy.maxPendingAgeMillis),
+                            ),
+                            atMillis,
+                        )
                         continue
                     }
                     accepted += peerId

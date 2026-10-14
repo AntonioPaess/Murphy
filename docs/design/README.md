@@ -2,6 +2,11 @@
 
 Data: 2026-10-05. Estado: proposta para revisão; nenhuma tela implementada.
 
+Atualização 2026-10-14: todas as pranchas, inclusive a proposta inicial, agora
+usam inglês no texto de interface. O idioma do produto é inglês; documentação
+de decisões/conversa pode permanecer em português. O catálogo aprovado e a
+verificação estão em `english-copy.json` e `scripts/design-copy.mjs`.
+
 Direção atual: [v0.2 premium](premium/README.md), solicitada pelo usuário com
 Revolut como referência de acabamento. As pranchas abaixo preservam a v0.1
 verde para comparação; a nova versão revisa todas as 16 telas.
