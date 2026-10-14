@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Murphy"
 include(":shared")
-
+include(":androidApp")
