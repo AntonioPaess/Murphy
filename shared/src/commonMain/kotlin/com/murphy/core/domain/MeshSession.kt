@@ -107,6 +107,10 @@ public class MeshSession(
     public fun handleIncoming(envelope: MeshEnvelope, atMillis: Long): ForwardDecision {
         val decision = router.accept(envelope)
         when (decision) {
+            is ForwardDecision.Broadcast -> {
+                eventStore.append(MeshEvent.MessageDelivered(localNode, decision.envelope, atMillis))
+                decision.relay?.let { eventStore.append(MeshEvent.MessageForwarded(localNode, it, atMillis)) }
+            }
             is ForwardDecision.Deliver -> eventStore.append(
                 MeshEvent.MessageDelivered(
                     node = localNode,

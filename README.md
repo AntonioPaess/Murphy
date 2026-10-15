@@ -2,7 +2,7 @@
 
 Murphy is a peer-to-peer BLE mesh network for outdoor activities such as hiking and surfing. It is designed for communication when there is no internet or cellular coverage, with shared networking logic across Android and iOS through Kotlin Multiplatform.
 
-The project is intentionally starting with the shared domain core before platform-specific Bluetooth integrations. The first increment establishes:
+The shared domain core and native radio adapters establish:
 
 - a connection state machine;
 - a small, testable mesh packet router with TTL and duplicate protection;
@@ -12,11 +12,14 @@ The project is intentionally starting with the shared domain core before platfor
 - a shared transport coordinator that bridges BLE connections and routing decisions;
 - per-peer send outcomes, so a failed link does not stop attempts on other links.
 
-**Current delivery status:** Android (Jetpack Compose) and iPhone (SwiftUI) demo
-hosts now use the same KMP preview state. Explore a local group, network empty
-state, unsent drafts, activity, settings and a non-transmitting SOS preview.
-**This is a UI demo, not a working Bluetooth messenger.** Native BLE, destination
-ACK, durable storage, security and background radio remain unimplemented.
+**Current delivery status:** Android (Jetpack Compose) and iPhone (SwiftUI) now
+use native BluetoothGatt/CoreBluetooth adapters and a shared KMP `RadioSession`,
+not preview state. They discover open groups, establish GATT links and attempt
+group message transmission/relay using the shared binary protocol.
+**Physical Android↔iPhone interoperability is not yet validated.** Destination
+ACK, durable storage, authentication/encryption, background radio and functional
+SOS remain unimplemented. Keep this development build in the foreground; never
+send sensitive information or rely on it for safety.
 See the [status and testing guide](docs/testing.md) and
 [seven-track delivery plan](docs/implementation-plan.md).
 
@@ -33,7 +36,7 @@ warnings. User names and user-authored messages are not translated automatically
 - explicit state and event history for debugging and emergency scenarios;
 - a storage seam that lets each platform persist the same event model offline.
 
-The project is in the native-demo/foundation phase and is planned as a candidate for the JetBrains KMP Contest 2027.
+The project is in native radio integration and is planned as a candidate for the JetBrains KMP Contest 2027. Competition success cannot be guaranteed.
 
 The competition thesis and release bar are documented in [docs/competition-thesis.md](docs/competition-thesis.md).
 The decentralized topology decision is documented in [docs/architecture.md](docs/architecture.md).
@@ -56,8 +59,8 @@ Complete review boards: [onboarding](docs/design/premium/01-entrada.svg.png),
 [messaging and SOS](docs/design/premium/03-mensagens-sos.svg.png),
 [history and settings](docs/design/premium/04-historico-ajustes.svg.png).
 
-These boards are **static product concepts**. The native demo implements a subset
-with real navigation and local preview state, not working discovery or messaging.
+These boards are **static product concepts**. The native app implements a subset
+with real navigation and native radio callbacks, not invented remote peers.
 Native system fonts support text scaling; the palette remains graphite/white/cobalt.
 Sending accepted by an adapter must never be presented as destination acknowledgement.
 
@@ -78,13 +81,19 @@ that editable Figma screens were delivered. Track 1 has no completion commit.
 shared/
   src/commonMain/   platform-independent domain and routing logic
   src/commonTest/   deterministic unit tests
-androidApp/         Android Compose demo host + instrumentation tests
-iosApp/             iPhone SwiftUI host + shared Xcode scheme + UI tests
+androidApp/         Android Compose app + BluetoothGatt adapter + UI tests
+iosApp/             iPhone SwiftUI app + CoreBluetooth adapter + UI tests
 ```
 
-`MeshSession.handleIncoming` is the bridge between transport adapters and the
-shared routing core. It applies TTL and duplicate protection, then records the
-decision in `MeshEventStore` so an emergency trace remains inspectable offline.
+`RadioSession` serializes real native callbacks through `MeshSession` and the
+shared router. Group broadcasts deliver locally and relay to peers except the
+incoming link, with hop TTL and a bounded 4,096-ID session cache. This is not
+durable deduplication or authenticated replay protection. History remains in memory.
+
+The [development wire specification](docs/radio-protocol.md) describes GATT
+UUIDs, group IDs, bounded fragmentation, handshake and local acceptance semantics.
+Every phone can relay; no required group leader exists. The per-link role
+tie-break only selects a sending connection when two roles coexist.
 
 `MeshTransportCoordinator` currently uses bounded flooding: it forwards a
 message to every attached peer except the peer that sent it. TTL and duplicate
@@ -95,7 +104,9 @@ peers whose adapters accepted the send, alongside failures for the other peers.
 `NoRoute` means no eligible peer is attached; it does not prove the destination
 is globally unreachable. Cancellation propagates to the caller.
 
-Expected failed sends are queued per message and peer. `MeshRetryPolicy`
+The separate suspend-based `MeshTransportCoordinator` is still a tested core
+contract: its retry scheduler is **not wired into the current native adapters**.
+Expected failed sends through that coordinator are queued per message and peer. `MeshRetryPolicy`
 defaults to three total attempts, a one-second delay, 128 pending entries and
 a 60-second local pending-send lifetime from the first failed attempt.
 The platform calls `retryPending(atMillis)` using its session clock; there is
@@ -123,12 +134,12 @@ distribution and dependencies. Run the shared core tests on JVM with:
 ./gradlew :shared:jvmTest
 ```
 
-On 2026-10-14, **35 shared tests passed on JVM and 35 on the iOS arm64 simulator**,
-including five preview-state tests. The shared iPhone-device target compiled,
-the simulator and unsigned device apps built with KMP. **Two XCUITests and two
-Compose UI tests passed**; Android debug APK generated. Build/test evidence and
-the physical-device procedure are in [docs/testing.md](docs/testing.md).
-Logic tests use fake connections, not physical BLE. On a machine configured for
+In this increment, **50 shared tests passed on JVM and 50 on the iOS arm64 simulator**,
+including codec/framing, three-node packet relay and no-false-ACK tests.
+The Android APK, iPhone simulator and unsigned device apps built with native
+adapters. **Two UI tests passed per virtual platform.** Full evidence and
+physical-device procedures are in [docs/testing.md](docs/testing.md).
+Logic tests exchange packets in memory, not physical BLE. On a machine configured for
 the native targets, the broader test entry point is:
 
 ```bash
@@ -146,7 +157,7 @@ This checks 710 text nodes across nine SVG boards against
 system wired to a running application. See [docs/testing.md](docs/testing.md)
 for current commands and the future physical-device acceptance checklist.
 
-## Run the demo apps
+## Run the native development apps
 
 Android: set `ANDROID_HOME`, install SDK Platform 35 and open the repository in
 Android Studio. Select `androidApp` and Run on an emulator or an authorized phone.
@@ -159,16 +170,32 @@ selected SDK/configuration. For a physical phone, choose your own signing team
 in Xcode and complete device pairing/Developer Mode yourself. No signing identity
 is checked in. Intel iPhone simulators are not configured in the app host yet.
 
-Both apps show **DEMO MODE · Bluetooth not connected**. A demo group is local;
-it cannot be discovered by another phone. Chat saves at most 50 unsent drafts
-in memory. History is capped at 100 local demo events. Closing the process loses
-state; leaving a group clears drafts. SOS requires confirmation and opens only a
-preview. It sends nothing, shares no location and contacts no rescue service.
+On device A, enter **Your name** and **Group name**, then **Create group**.
+On device B, enter your name, **Find nearby groups**, select the discovered
+group and **Join group**. Approve Bluetooth permissions yourself and keep both
+apps open. **Scan nearby** refreshes a bounded 10-second discovery window.
+Allow handshake completion before sending from **Chat** in both directions.
+Group names are labels: joining the same public UUID matters, not creating a
+second group with the same name.
 
-## Real native demo captures
+Only actual connected links count as peers. With no peer, Chat says **Not sent ·
+no connected peers**. A successful native write says **Bluetooth accepted ·
+receipt unconfirmed**, never destination Delivered/ACK. There is no automatic
+retry after reconnection yet. Messages/activity (100 each), groups (32) and
+peer links are bounded in memory; process restart loses state.
+
+Going into background closes radio links; resume may require another scan.
+The iPhone simulator explicitly has no physical radio, so test transmission on
+actual phones. **SOS not available yet** explains that no emergency alert,
+location or rescue request is sent. No Internet/server dependency is added.
+
+## Native UI captures
 
 Captured in virtual-device UI tests, not generated mockups. More states and
 capture provenance are in [docs/screenshots](docs/screenshots/README.md).
 
-<img src="docs/screenshots/android-group.png" width="280" alt="Android native demo group with zero peers">
-<img src="docs/screenshots/ios-group.png" width="280" alt="iPhone native demo group with zero peers">
+See [capture provenance](docs/screenshots/README.md); virtual-device captures
+are UI evidence only, never proof of Bluetooth delivery.
+
+<img src="docs/screenshots/android-group.png" width="280" alt="Android native group with zero connected peers">
+<img src="docs/screenshots/ios-group.png" width="280" alt="iPhone native group with explicit simulator radio limitation">

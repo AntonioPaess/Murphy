@@ -1,36 +1,51 @@
 # Murphy — implementation status and testing
 
-Updated 2026-10-14. App-owned UI language: **English**.
+Updated 2026-10-15. App-owned UI language: **English**.
 
 ## Implementation boundary
 
 | Area | Exists | Limitation |
 | --- | --- | --- |
-| KMP core | Routing, TTL/deduplication, relay simulator, transport/retry/60-second expiry | Fake adapters; serialized caller-driven scheduler; memory only |
-| Shared preview | One Kotlin `PreviewSession` consumed by Android and Swift | Local group, 50 unsent drafts, 100 events, SOS preview; no radio or durable storage |
-| Android app | Compose, ViewModel, premium English UI, instrumentation tests | Demo host, API 26+ |
-| iPhone app | SwiftUI, native tabs/navigation/forms, KMP framework build phase, UI tests | Demo host, iOS 16+; Apple Silicon simulator and arm64 device |
+| KMP core | Routing, bounded TTL/dedup cache, shared binary wire/framing, real callback `RadioSession` | Memory only; separate coordinator retry scheduler is not connected to native callbacks |
+| Native radio | BluetoothGatt Android + CoreBluetooth iPhone, central/peripheral, group discovery/handshake, group broadcast/relay | Physical interoperability/range/throughput not validated; foreground only; public groups |
+| Android app | Compose, ViewModel, premium English UI, real radio state, UI tests | API 26+; permission approval required |
+| iPhone app | SwiftUI, native tabs/navigation/forms, KMP framework, real radio state, UI tests | iOS 16+; Apple Silicon simulator (no radio) and arm64 device |
 | Design | Graphite/white/cobalt; native fonts/text scaling; English SVG/PNG references | Native subset of 16 static concepts, not a completed Figma implementation |
 | Figma | Empty workspace; metadata/font/library discovery succeeded | First write hit Starter quota; web canvas did not load. No publication or paid upgrade |
-| Real messenger | **Not implemented** | BLE, discovery/groups, wire protocol, ACK, persistence, security/background and transmitted SOS pending |
+| Reliable/safe messenger | **Not complete** | Destination ACK, durable history/retry, authentication/encryption, background/battery, SOS and physical acceptance pending |
 
 ## Evidence
 
-On 2026-10-14, **35 shared tests passed on JVM and 35 on the iOS arm64 simulator**,
-zero failures/errors/skips. Five new preview-state tests cover name validation,
-bounded immutable drafts, user text preservation, explicitly non-transmitting
-SOS and exit/history bounds. The shared iPhone-device target also compiled.
+**50 shared tests passed on JVM and 50 on the iOS arm64 simulator**, zero
+failures/errors/skips. New tests cover strict codec rejection/UTF-8, bounded and
+expired framing, real callback group scoping, in-memory three-node packet relay,
+TTL boundary, source exclusion/deduplication, bounded cache and no false ACK.
+Legacy preview tests remain but normal apps no longer use `PreviewSession`.
 
-The iPhone simulator app compiled with KMP; **two XCUITests passed** on iPhone
-17/iOS 26.1. Group/history/SOS screenshots were exported and inspected. The
-debug Android APK/test APK were generated; **two Compose tests passed** on the
-Medium Phone Android 16/API 36.1 emulator after updating the test harness.
-These are virtual-device tests, not physical BLE validation.
+The iPhone simulator app with the real adapter compiled with KMP; **two current
+XCUITests passed** on iPhone 17/iOS 26.1: no-peer send/history, unavailable SOS and
+leave flow. The debug Android APK/test APK built; **two current Compose tests
+passed** on Medium Phone/Android 16/API 36.1: no-peer send/rotation, unavailable
+SOS and leave. The first SOS assertion needed lazy-list scrolling rather than
+looking for a not-yet-composed offscreen node; corrected and repeated. These are virtual-device
+tests, not physical BLE validation. Capture provenance: [screenshots](screenshots/README.md).
 
 English design guard: **710 approved text nodes across nine SVG boards**.
 `plutil` accepted project/Info.plist; `xcodebuild -list` recognized Murphy.
-The complete iPhone-device arm64 app also built with signing disabled. This is
-an unsigned build, not installation on the user's iPhone or an IPA/TestFlight release.
+The current native-radio iPhone-device arm64 app also built successfully with
+signing disabled. No installation on the user's iPhone, IPA or TestFlight release
+is claimed.
+
+The file provider supplied stale/dataless duplicate generated class files during
+the repeat build. The affected generated runtime-class directory and Android
+build folder (including duplicate ` 2.dex` files) were preserved under ignored
+`build/file-recovery/` and regenerated; the clean final build succeeded.
+No global sync settings or user files were deleted. The old copy checker had
+accepted a partial read with only 299 text nodes; it now rejects empty/incomplete
+SVGs before checking or rewriting. Verified the unchanged **710 nodes/nine boards**
+from a clean Git export in a temporary directory; a complete-board fixture
+passed and an incomplete SVG fixture correctly failed. Native English UI is
+checked separately from those static design boards.
 
 ## Build prerequisites
 
@@ -92,12 +107,16 @@ captures are in `docs/screenshots/`. Do not select a physical phone unintentiona
 With the test APKs still installed and the screenshot files present, export
 unchanged PNGs using `node scripts/export-android-screenshots.mjs emulator-5554`
 (replace with your actual test-emulator serial). The script refuses physical
-device serials and reads only this demo app's two known screenshot files.
+device serials and reads only this app's two known screenshot files.
 
 For a physical Android, enable USB debugging, authorize this computer and select
 the phone yourself; disable debugging afterwards if not needed. See the
 [official guide](https://developer.android.com/studio/run/device).
-The demo requests no Bluetooth, location or Internet permissions.
+Android 12+ requests Nearby devices scan/connect/advertise permissions when
+the user creates/finds/scans. Older versions request location permission for
+BLE scanning (legacy permissions are maxSdk 30). `neverForLocation` is declared;
+Murphy does not derive location. No Internet permission is added. See the
+[official Bluetooth permissions guide](https://developer.android.com/develop/connectivity/bluetooth/bt-permissions).
 
 ## iPhone
 
@@ -134,31 +153,54 @@ Simulator tests are not physical BLE evidence.
 Optional shared native checks: `./gradlew :shared:compileKotlinIosArm64` and
 `./gradlew :shared:iosSimulatorArm64Test`.
 
-## What to test in both demos
+## What to test in the current native apps
 
-1. Welcome shows **DEMO MODE · Bluetooth not connected** and emergency warning.
+1. Welcome shows **Bluetooth not started**, English development/privacy warning.
 2. Enter **Your name** and **Group name**; empty inputs cannot proceed. Names
    over 40 UTF-16 units return the shared English error.
-3. Group shows **0 direct peers**. Network explains no scanning/advertising,
-   connection, GPS or distance measurement.
-4. Save a Chat draft: **Not sent · demo only**, never Sent/Delivered/ACK.
-   Empty/over-1,000-unit drafts and the 51st draft are rejected.
-5. History shows local demo events newest first; iPhone rows open details.
-6. Preview SOS: cancel, then confirm. No alert sent/nobody alerted; close it.
-7. Settings clears drafts. Leaving requires confirmation and clears identity/
-   drafts. Force-stop/relaunch loses state by design (track 5 is pending).
-   Android rotation retains ViewModel state.
+3. Group shows only actual connected peers. With none, **0 direct peers**;
+   Network has no invented device, position or distance.
+4. No-peer Chat send: **Not sent · no connected peers**, never Delivered/ACK.
+   Empty/over-1,000-unit messages are rejected; messages/activity retain at most
+   100 entries each. Recent entries evict oldest; this is not durable outbox.
+5. History shows actual local activity newest first, not made-up peer events.
+6. **SOS not available yet** opens an explanation, not a fake alert sent flow.
+7. Leaving requires confirmation, closes links and clears messages/group.
+   Force-stop/relaunch loses state (track 5 pending). Android rotation retains
+   ViewModel content but pauses/resumes radio through the foreground lifecycle.
 8. Device language Portuguese: app-owned labels remain English; typed content
    is unchanged. Native OS components may be localized.
 9. Try large text, screen readers, landscape, narrow width and keyboard. Record
    clipping/focus/tap-target/outdoor contrast issues. Native scaling and labels
    are a baseline, not accessibility certification.
 
-## Physical acceptance — blocked until radio implementation
+## Physical development test — native adapters implemented, not yet validated
+
+Install the development APK on authorized Androids using Android Studio. On
+iPhone 16 Pro, open the Xcode project, select your own signing team, pair/trust
+the phone, enable Developer Mode yourself and Run. No signing account, device
+setting or remote install is changed automatically.
+
+Keep Bluetooth enabled and both apps in foreground. On A, **Create group**;
+on B, enter a display name → **Find nearby groups** → pick A's advertised group
+→ **Join group**. Do not create two separate groups with the same name. Use
+**Scan nearby** on both if discovery's 10-second window expired. Wait for an
+actual peer on both, then send from **Chat** in both directions. Confirm body
+on the receiving screen; sender acceptance is not receipt proof. First use only
+non-sensitive test data. Disable cellular/Wi-Fi if checking no-server operation,
+but keep Bluetooth on; no airplane-mode assumption is made.
+
+Record model, OS, foreground state, permission status, exact body, both screens,
+direction and timing. Test multiline/emoji/1,000-unit packets, duplicate body
+with distinct IDs, Bluetooth off, permission denial and disconnect/rescan.
+Current queued packets fail on disconnect; there is no automatic resend later.
+Going to background pauses radio; this is a disclosed limit, not a passed
+background/battery test. See [wire contract/limits](radio-protocol.md).
 
 Android+iPhone suffice for direct radio; **three physical devices** for a relay.
 Prevent the direct shortcut with a developer-controlled topology; distance alone
-does not prove sender → relay → receiver.
+does not prove sender → relay → receiver. A link-exclusion/trace harness for
+physical relay proof is still pending; the shared three-node test is in memory.
 
 Available to the user: an iPhone 16 Pro and multiple Android phones at work
 (confirmed 2026-10-14). Plan: Android ↔ iPhone direct in both directions, then
@@ -166,19 +208,20 @@ Android → iPhone relay → Android and iPhone → Android relay → Android, w
 the shortcut explicitly disabled. These devices have not been connected or
 tested by this build; the user still needs to pair/authorize them.
 
-| Check | Expected result after implementation |
+| Check | Current / future acceptance |
 | --- | --- |
 | Permission denied/Bluetooth off | English recovery path, no false connection |
 | No internet/cellular; Bluetooth on | No server requirement |
-| Direct/relay send | Display once; destination ACK, not adapter acceptance, permits receipt state |
-| Disconnect/reconnect | Other links tried; eligible retries preserve TTL |
-| Disconnected past 60-second age | Caller-driven expiry once; no stale send after reconnect |
+| Direct/relay send | Current local receive/forward code; physical proof pending. Destination ACK still absent |
+| Disconnect/reconnect | Current native queues fail/disconnect; rescan, no automatic message retry |
+| 60-second deadline | Native packet queue/assembly timeout; separate core retry expiry is not wired into apps |
 | Duplicate/TTL/queue limits | Explicit bounded outcomes, no loops/unbounded retries |
-| Group/authentication mismatch | Cannot inject content or spoof ACK |
+| Group/authentication mismatch | Foreign UUID ignored, but current public groups are not authenticated; security pending |
 | Restart | Durable recovery only after track 5, no stale sends |
 | Background/battery saver | Measure limitations/energy; no unrestricted BLE promise |
 | SOS | Group-only, meaningful receipt state, no automatic rescue/location |
 | Accessibility/outdoors | Usable large fonts/screen readers, warnings not color-only |
 
-Tracks 3–7 remain pending; see [delivery plan](implementation-plan.md).
-Murphy Demo is not an emergency-ready messenger and cannot guarantee delivery.
+Tracks 4–7 and physical acceptance of track 3 remain pending; see
+[delivery plan](implementation-plan.md). Figma publication remains blocked.
+Murphy is not an emergency-ready messenger and cannot guarantee delivery.

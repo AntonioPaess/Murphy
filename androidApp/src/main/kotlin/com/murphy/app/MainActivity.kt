@@ -1,10 +1,18 @@
 package com.murphy.app
 
+import android.Manifest
+import android.app.Application
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,9 +34,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.murphy.core.preview.PreviewSession
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
+import com.murphy.core.radio.RadioSession
+import java.text.Normalizer
+import java.util.UUID
 
 private val Cobalt = Color(0xFF224BFA)
 private val Canvas = Color(0xFFF6F7FA)
@@ -37,33 +48,62 @@ private val Muted = Color(0xFF646873)
 private val Danger = Color(0xFFBF263B)
 
 class MainActivity : ComponentActivity() {
+    private lateinit var model: RadioViewModel
+    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (requiredPermissions().all { name -> ContextCompat.checkSelfPermission(this, name) == PackageManager.PERMISSION_GRANTED }) model.activate()
+        else model.permissionDenied()
+    }
+    private fun requiredPermissions(): Array<String> = if (Build.VERSION.SDK_INT >= 31)
+        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE)
+        else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    private fun requestRadio() {
+        model.wantsRadio = true
+        if (requiredPermissions().all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) model.activate()
+        else permissions.launch(requiredPermissions())
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        model = ViewModelProvider(this)[RadioViewModel::class.java]
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
-        )
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(
-                primary = Cobalt, background = Canvas, surface = Color.White,
-                primaryContainer = Color(0xFFEAF0FF), onPrimaryContainer = Cobalt,
-                secondary = Cobalt, onSecondary = Color.White,
-                secondaryContainer = Color(0xFFEAF0FF), onSecondaryContainer = Cobalt,
-                onSurface = Graphite, onBackground = Graphite, error = Danger,
-            )) { MurphyApp() }
+            MaterialTheme(colorScheme = lightColorScheme(primary = Cobalt, background = Canvas, surface = Color.White,
+                primaryContainer = Color(0xFFEAF0FF), onPrimaryContainer = Cobalt, secondary = Cobalt, onSecondary = Color.White,
+                secondaryContainer = Color(0xFFEAF0FF), onSecondaryContainer = Cobalt, onSurface = Graphite, onBackground = Graphite, error = Danger)) {
+                MurphyApp(model, ::requestRadio) { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+            }
         }
     }
+    override fun onStart() { super.onStart(); if (::model.isInitialized) { model.foreground = true; if (model.wantsRadio) requestRadio() } }
+    override fun onStop() { if (::model.isInitialized) model.background(); super.onStop() }
 }
 
-class PreviewViewModel : ViewModel() {
-    private val session = PreviewSession()
+class RadioViewModel(app: Application) : AndroidViewModel(app) {
+    private val session = RadioSession(UUID.randomUUID().toString())
     var snapshot by mutableStateOf(session.snapshot())
         private set
-
-    fun change(action: PreviewSession.() -> Unit) {
-        session.action()
-        snapshot = session.snapshot()
+    var foreground = false
+    var wantsRadio = false
+    private val radio = AndroidRadio(app, session) { refresh() }
+    private fun refresh() { snapshot = session.snapshot() }
+    fun create(group: String, name: String): Boolean = join(UUID.randomUUID().toString(), group, name)
+    fun join(id: String, group: String, name: String): Boolean {
+        radio.stop()
+        val accepted = session.start(id, Normalizer.normalize(group, Normalizer.Form.NFC), Normalizer.normalize(name, Normalizer.Form.NFC))
+        refresh(); return accepted
     }
+    fun activate() { if (foreground) { radio.start(); refresh() } }
+    fun permissionDenied() { session.status("Nearby devices permission is required · try again"); refresh() }
+    fun background() { foreground = false; radio.stop(); session.status("Bluetooth paused · keep Murphy open to communicate"); refresh() }
+    fun send(text: String): Boolean {
+        val id = UUID.randomUUID().toString()
+        val batch = session.send(text, id, SystemClock.elapsedRealtime())
+        refresh(); radio.sendAll(batch)
+        return snapshot.messages.any { it.id == id }
+    }
+    fun leave() { wantsRadio = false; radio.stop(); session.leave(); session.status("Bluetooth not started"); refresh() }
+    override fun onCleared() { radio.stop() }
 }
 
 private enum class Destination(val title: String, val icon: ImageVector) {
@@ -72,227 +112,156 @@ private enum class Destination(val title: String, val icon: ImageVector) {
 }
 
 @Composable
-fun MurphyApp(model: PreviewViewModel = viewModel()) {
+fun MurphyApp(model: RadioViewModel, requestRadio: () -> Unit, bluetoothSettings: () -> Unit) {
     val state = model.snapshot
     val keyboard = LocalSoftwareKeyboardController.current
     var destination by remember { mutableStateOf(Destination.GROUP) }
     var settings by remember { mutableStateOf(false) }
-    var sosConfirmation by remember { mutableStateOf(false) }
     var leaveConfirmation by remember { mutableStateOf(false) }
-    var explanation by remember { mutableStateOf(false) }
-    Scaffold(
-        containerColor = Canvas,
-        topBar = {
-            Row(Modifier.windowInsetsPadding(WindowInsets.statusBars)
-                .fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("murphy", style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold)
-                if (state.groupName != null) IconButton(onClick = { settings = true }) {
-                    Icon(Icons.Default.Settings, contentDescription = "Open settings")
-                }
-            }
-        },
-        bottomBar = {
-            if (state.groupName != null) NavigationBar(containerColor = Color.White) {
-                Destination.entries.forEach { item ->
-                    NavigationBarItem(selected = destination == item,
-                        modifier = Modifier.testTag("tab-${item.name}"),
-                        onClick = { destination = item },
-                        icon = { Icon(item.icon, contentDescription = null) },
-                        label = { Text(item.title) })
-                }
-            }
-        },
-    ) { padding ->
+    var sosInformation by remember { mutableStateOf(false) }
+    Scaffold(containerColor = Canvas, topBar = {
+        Row(Modifier.windowInsetsPadding(WindowInsets.statusBars).fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("murphy", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            if (state.group != null) IconButton(onClick = { settings = true }) { Icon(Icons.Default.Settings, "Open settings") }
+        }
+    }, bottomBar = {
+        if (state.group != null) NavigationBar(containerColor = Color.White) {
+            Destination.entries.forEach { item -> NavigationBarItem(selected = destination == item,
+                modifier = Modifier.testTag("tab-${item.name}"), onClick = { destination = item },
+                icon = { Icon(item.icon, null) }, label = { Text(item.title) }) }
+        }
+    }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
-            Text("DEMO MODE · Bluetooth not connected", color = Cobalt,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.fillMaxWidth().background(Color(0xFFEAF0FF))
-                    .padding(horizontal = 24.dp, vertical = 12.dp))
-            state.notice?.let { Text(it, color = Danger,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) }
-            if (state.groupName == null) {
-                Welcome(onOpen = { group, name ->
-                    model.change { start(group, name) }
-                    if (model.snapshot.groupName != null) keyboard?.hide()
-                    destination = Destination.GROUP
-                })
-            } else when (destination) {
+            Text(state.radioStatus, color = Cobalt, style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.fillMaxWidth().background(Color(0xFFEAF0FF)).padding(horizontal = 24.dp, vertical = 12.dp))
+            state.notice?.let { Text(it, color = Danger, modifier = Modifier.padding(24.dp)) }
+            if (state.group == null) Welcome(model, requestRadio) { keyboard?.hide(); destination = Destination.GROUP }
+            else when (destination) {
                 Destination.GROUP -> Screen {
-                    item { Heading("YOUR GROUP", state.groupName!!) }
+                    item { Heading("YOUR GROUP", state.group!!.name) }
                     item { PremiumCard {
-                        Text("0", style = MaterialTheme.typography.displayLarge,
-                            fontWeight = FontWeight.Bold, fontSize = 84.sp)
+                        Text(state.peers.size.toString(), fontSize = 84.sp, fontWeight = FontWeight.Bold)
                         Text("direct peers", style = MaterialTheme.typography.titleMedium)
-                        Hint("No radio connected. Open this demo to explore the experience.")
+                        Hint("Connected Bluetooth links. This is not a global reach or delivery count.")
                     } }
                     item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = { destination = Destination.NETWORK },
-                            modifier = Modifier.weight(1f)) { Text("Network") }
-                        Button(onClick = { destination = Destination.CHAT },
-                            modifier = Modifier.weight(1f)) { Text("Chat") }
+                        OutlinedButton({ destination = Destination.NETWORK }, Modifier.weight(1f)) { Text("Network") }
+                        Button({ destination = Destination.CHAT }, Modifier.weight(1f)) { Text("Chat") }
                     } }
                     item { PremiumCard {
                         Text("Stay close. Stay connected.", style = MaterialTheme.typography.titleLarge)
-                        Hint("Murphy is being built for nearby, offline communication. " +
-                            "Discovery, messaging and delivery confirmation are not active in this demo.")
+                        Hint("This is an open, unencrypted group. Keep Murphy in the foreground. Do not send sensitive information or rely on it for safety.")
+                        Hint("Group ID · ${state.group!!.id.take(8)}")
                     } }
-                    item { OutlinedButton(onClick = { sosConfirmation = true },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) {
-                        Text("Preview SOS")
-                    } }
-                    item { Hint("Not an emergency service. Never rely on this demo for safety.") }
+                    item { Button(requestRadio, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Scan nearby") } }
+                    item { TextButton(bluetoothSettings) { Text("Bluetooth settings") } }
+                    item { OutlinedButton({ sosInformation = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) { Text("SOS not available yet") } }
                 }
                 Destination.NETWORK -> Screen {
-                    item { Heading("OFFLINE BY DESIGN", "Your network") }
+                    item { Heading("NEARBY BLUETOOTH", "Your network") }
                     item { PremiumCard(dark = true) {
-                        Text("Just you, for now.", style = MaterialTheme.typography.headlineMedium)
-                        Text("No connected peers", style = MaterialTheme.typography.titleMedium)
-                        Text("This demo does not scan, advertise or connect over Bluetooth.")
+                        Text(if (state.peers.isEmpty()) "No connected peers" else "Connected nearby", style = MaterialTheme.typography.headlineMedium)
+                        Text("Peers can relay group messages. No leader is required.")
                     } }
-                    item { PremiumCard {
-                        Text(state.displayName, style = MaterialTheme.typography.titleLarge)
-                        Hint("This device · local demo identity")
-                        OutlinedButton(onClick = { explanation = true }) { Text("How the mesh will work") }
+                    item { PremiumCard { Text(state.displayName, style = MaterialTheme.typography.titleLarge); Hint("This device · Bluetooth group member") } }
+                    items(state.peers, key = { it.id }) { peer -> PremiumCard {
+                        Text(peer.name, style = MaterialTheme.typography.titleLarge); Hint("Connected peer · ${peer.id.take(8)}")
                     } }
-                    item { Hint("The mesh view is not a GPS map. Peer distance and location are not measured.") }
+                    item { Hint("Bluetooth does not measure a GPS position or distance here. Peer identity is not authenticated yet.") }
+                    item { Button(requestRadio, Modifier.fillMaxWidth()) { Text("Scan nearby") } }
                 }
                 Destination.CHAT -> Chat(model)
                 Destination.HISTORY -> Screen {
                     item { Heading("ON THIS DEVICE", "Activity") }
-                    item { Hint("Demo activity only · memory, not durable storage. " +
-                        "Newest first. No remote receipt is implied.") }
+                    item { Hint("Real local activity · memory only. Not a destination acknowledgement.") }
                     items(state.events.reversed(), key = { it.id }) { event -> PremiumCard {
-                        Text(event.title, style = MaterialTheme.typography.titleMedium)
-                        Hint(event.detail)
+                        Text(event.title, style = MaterialTheme.typography.titleMedium); Hint(event.detail)
                     } }
                 }
             }
         }
     }
-    if (settings) AlertDialog(onDismissRequest = { settings = false },
-        title = { Text("Settings") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    if (settings) AlertDialog(onDismissRequest = { settings = false }, title = { Text("Settings") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("English interface · native text scaling")
-            Hint("UI demo only. No encryption, background radio or durable storage is active.")
-            OutlinedButton(onClick = { model.change { clearDrafts() }; settings = false }) {
-                Text("Clear demo drafts")
-            }
-            OutlinedButton(onClick = { settings = false; leaveConfirmation = true }) {
-                Text("Leave demo group")
-            }
-        } }, confirmButton = { TextButton(onClick = { settings = false }) { Text("Done") } })
-    if (leaveConfirmation) AlertDialog(onDismissRequest = { leaveConfirmation = false },
-        title = { Text("Leave this demo group?") },
-        text = { Text("Your local demo drafts will be cleared. No peer will be notified.") },
-        confirmButton = { TextButton(onClick = {
-            model.change { leave() }; leaveConfirmation = false
-        }) { Text("Leave group") } },
-        dismissButton = { TextButton(onClick = { leaveConfirmation = false }) { Text("Keep exploring") } })
-    if (explanation) AlertDialog(onDismissRequest = { explanation = false },
-        title = { Text("A mesh, not a central leader") },
-        text = { Text("The shared routing core can relay packets between peers with hop limits " +
-            "and duplicate protection. Native discovery and radio transport are still being built. " +
-            "No live network is shown here.") },
-        confirmButton = { TextButton(onClick = { explanation = false }) { Text("Got it") } })
-    if (sosConfirmation) AlertDialog(onDismissRequest = { sosConfirmation = false },
-        title = { Text("Preview an SOS?") },
-        text = { Text("This opens a UI preview only. No alert is sent, no rescue service is " +
-            "contacted and no location is shared. Real SOS will be limited to your group.") },
-        confirmButton = { TextButton(onClick = {
-            sosConfirmation = false; model.change { previewSos() }
-        }) { Text("Open preview") } },
-        dismissButton = { TextButton(onClick = { sosConfirmation = false }) { Text("Cancel") } })
-    if (state.sosPreview) AlertDialog(onDismissRequest = { model.change { closeSosPreview() } },
-        title = { Text("SOS preview · not sent", color = Danger) },
-        text = { Text("No one has been alerted. This is not a working emergency channel. " +
-            "No destination acknowledgement is available.") },
-        confirmButton = { TextButton(onClick = { model.change { closeSosPreview() } }) { Text("Close preview") } })
+            Hint("Foreground Bluetooth only. No encryption or persistent history yet. Restarting the process loses this session.")
+            OutlinedButton({ settings = false; leaveConfirmation = true }) { Text("Leave group") }
+        } }, confirmButton = { TextButton({ settings = false }) { Text("Done") } })
+    if (leaveConfirmation) AlertDialog(onDismissRequest = { leaveConfirmation = false }, title = { Text("Leave this group?") },
+        text = { Text("Bluetooth links close and local messages clear. No rescue service is contacted.") },
+        confirmButton = { TextButton({ model.leave(); leaveConfirmation = false }) { Text("Leave group") } },
+        dismissButton = { TextButton({ leaveConfirmation = false }) { Text("Stay") } })
+    if (sosInformation) AlertDialog(onDismissRequest = { sosInformation = false }, title = { Text("SOS is not available yet") },
+        text = { Text("This build cannot send emergency alerts. It does not contact rescue services or share your location. Do not rely on Murphy for safety.") },
+        confirmButton = { TextButton({ sosInformation = false }) { Text("Got it") } })
 }
 
 @Composable
-private fun Welcome(onOpen: (String, String) -> Unit) {
-    var opening by rememberSaveable { mutableStateOf(false) }
+private fun Welcome(model: RadioViewModel, requestRadio: () -> Unit, opened: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
     var group by rememberSaveable { mutableStateOf("") }
     Screen {
         item { PremiumCard(dark = true) {
-            Text("A little closer.\nEven offline.", style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-            Text("A calmer way to stay with your people, beyond cellular coverage.")
-            Text("Product preview · no Bluetooth messaging", color = Color(0xFFBFCBF8))
+            Text("A little closer.\nEven offline.", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold,
+                modifier = Modifier.semantics { heading() })
+            Text("Communicate with your nearby group over Bluetooth, without a server.")
+            Text("Development build · foreground only · not encrypted", color = Color(0xFFBFCBF8))
         } }
-        if (!opening) {
-            item { Button(onClick = { opening = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                Text("Explore the demo")
-            } }
-            item { Hint("No account. No permission request. No real messages are sent.") }
-        } else {
-            item { Heading("GET STARTED", "Your demo group") }
-            item { OutlinedTextField(value = name, onValueChange = { name = it },
-                label = { Text("Your name") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(value = group, onValueChange = { group = it },
-                label = { Text("Group name") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            item { Button(onClick = { onOpen(group, name) }, enabled = name.isNotBlank() && group.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Open demo group") } }
-            item { TextButton(onClick = { opening = false }) { Text("Back to welcome") } }
-            item { Hint("This creates a local demo, not a discoverable group. Bluetooth permissions " +
-                "and nearby group discovery will arrive with the native radio integration.") }
-        }
-        item { Hint("Not for emergencies. Never rely on Murphy Demo for rescue or delivery.") }
+        item { OutlinedTextField(name, { name = it }, label = { Text("Your name") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+        item { OutlinedTextField(group, { group = it }, label = { Text("Group name") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+        item { Button({
+            if (model.create(group, name)) { opened(); requestRadio() }
+        }, Modifier.fillMaxWidth().heightIn(min = 52.dp), enabled = name.isNotBlank() && group.isNotBlank()) { Text("Create group") } }
+        item { OutlinedButton(requestRadio, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Find nearby groups") } }
+        items(model.snapshot.nearbyGroups, key = { it.id }) { found -> PremiumCard {
+            Text(found.name, style = MaterialTheme.typography.titleLarge); Hint("Open group · ${found.id.take(8)}")
+            Button({
+                if (model.join(found.id, found.name, name)) { opened(); requestRadio() }
+            }, enabled = name.isNotBlank()) { Text("Join group") }
+        } }
+        item { Hint("Nearby devices permission enables discovery, advertising and messaging. Older Android versions also require location permission for BLE scanning; Murphy does not derive your location.") }
+        item { Hint("Open groups are not private. Not for emergencies. No delivery guarantee.") }
     }
 }
 
 @Composable
-private fun Chat(model: PreviewViewModel) {
+private fun Chat(model: RadioViewModel) {
     var draft by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     Screen {
-        item { Heading("NOT TRANSMITTING", "Group chat") }
-        item { Hint("No connected peers. Save an unsent demo draft to explore this screen. " +
-            "Drafts are kept in memory only.") }
-        items(model.snapshot.drafts, key = { it.id }) { message ->
-            PremiumCard {
-                Text(message.body, style = MaterialTheme.typography.bodyLarge)
-                Text("Not sent · demo only", color = Cobalt, style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        item { OutlinedTextField(value = draft, onValueChange = { draft = it },
-            label = { Text("Demo message") }, supportingText = { Text("${draft.length}/1,000 characters") },
-            modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 6) }
-        item { Button(onClick = {
-            val count = model.snapshot.drafts.size
-            model.change { saveDraft(draft) }
-            if (model.snapshot.drafts.size > count) { draft = ""; keyboard?.hide() }
-        }, enabled = draft.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text("Save unsent draft")
+        item { Heading("GROUP CHAT", "Messages") }
+        item { Hint("Bluetooth acceptance is not destination receipt. Messages and history are in memory only.") }
+        if (model.snapshot.peers.isEmpty()) item { Hint("No connected peers. Your message will not be transmitted.") }
+        items(model.snapshot.messages, key = { it.id }) { message -> PremiumCard {
+            Text(if (message.own) "You" else message.sender, style = MaterialTheme.typography.labelLarge, color = Cobalt)
+            Text(message.body, style = MaterialTheme.typography.bodyLarge)
+            Text(message.status, style = MaterialTheme.typography.labelLarge, color = Muted)
         } }
+        item { OutlinedTextField(draft, { draft = it }, label = { Text("Message") },
+            supportingText = { Text("${draft.length}/1,000 characters") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 6) }
+        item { Button({
+            if (model.send(draft)) { draft = ""; keyboard?.hide() }
+        }, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = draft.isNotBlank()) { Text("Send message") } }
     }
 }
 
 @Composable
 private fun Screen(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp), content = content)
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp), content = content)
 }
-
 @Composable
 private fun Heading(eyebrow: String, title: String) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(eyebrow, color = Cobalt, style = MaterialTheme.typography.labelLarge)
-        Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
-            modifier = Modifier.semantics { heading() })
+        Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
     }
 }
-
-@Composable
-private fun Hint(text: String) { Text(text, color = Muted, style = MaterialTheme.typography.bodyMedium) }
-
+@Composable private fun Hint(text: String) { Text(text, color = Muted, style = MaterialTheme.typography.bodyMedium) }
 @Composable
 private fun PremiumCard(dark: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
-    Surface(color = if (dark) Color(0xFF0C111D) else Color.White,
-        contentColor = if (dark) Color.White else Graphite,
+    Surface(color = if (dark) Color(0xFF0C111D) else Color.White, contentColor = if (dark) Color.White else Graphite,
         shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }

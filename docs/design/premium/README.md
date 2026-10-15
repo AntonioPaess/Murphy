@@ -3,10 +3,10 @@
 2026-10-05 · 16 telas conceituais · Android como referência de interação.
 As pranchas são conceitos estáticos, não evidência de rádio ou protocolo funcional.
 
-Incremento nativo 2026-10-14: hosts Android Compose/iPhone SwiftUI implementam
-um subconjunto com navegação real e estado demo compartilhado em KMP. Grupo
-apenas local, zero peers, rascunhos não enviados, atividade em memória, ajustes
-e prévia SOS confirmada. Fontes nativas com text scaling substituem a fonte
+Incremento nativo 2026-10-14/15: Android Compose/iPhone SwiftUI implementam
+um subconjunto com navegação real e `RadioSession` KMP ligado a BluetoothGatt/
+CoreBluetooth. Grupo/peers vêm de descoberta e handshake reais, sem amostras
+inventadas; interoperabilidade física ainda não validada. Fontes com text scaling substituem a fonte
 provisória do mockup; a paleta premium permanece. Ver [testes](../../testing.md).
 Figma editável segue pendente: primeira escrita bloqueada pela cota Starter,
 editor web carregando, nenhuma publicação ou compra de plano.
@@ -15,8 +15,9 @@ Atualização 2026-10-14: todo texto de interface próprio do app agora está em
 inglês, inclusive avisos e erros; nomes próprios/conteúdo do usuário não são
 traduzidos. `node scripts/design-copy.mjs` valida as nove pranchas SVG (710 textos)
 contra o catálogo `docs/design/english-copy.json`. Prévias PNG regeneradas.
-Expiração de reenvios em 60 segundos é implementada no núcleo; o demo nativo
-não usa um adapter de rádio nem apresenta fila real como entrega.
+Expiração de reenvios em 60 segundos existe no coordenador isolado; esse
+scheduler ainda não está conectado aos adapters nativos. Aceitação local não
+é confirmação do destino. Filas e histórico seguem em memória.
 
 ## Intenção
 
@@ -65,7 +66,8 @@ respeitando movimento reduzido. Nada disso foi implementado ainda.
 
 ## Limites preservados
 
-Grupos, descoberta global, identidade, chat e SOS permanecem planejados.
+Grupos locais BLE e chat têm adapters reais; identidade autenticada, ACK,
+persistência, segurança/background e SOS funcional permanecem pendentes.
 Enviar/aceitar no transporte não confirma o destino. Histórico e fila atuais
 ficam em memória; ausência de vizinhos não prova destino global inacessível.
 SOS não aciona serviço de resgate, não garante entrega e não leva localização

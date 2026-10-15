@@ -116,47 +116,12 @@ public class MeshTransportCoordinator(
         atMillis: Long,
     ): MeshTransportDecision {
         return when (val decision = session.handleIncoming(envelope, atMillis)) {
+            is ForwardDecision.Broadcast -> MeshTransportDecision.BroadcastDelivered(
+                decision.envelope, decision.relay?.let { forward(it, fromPeer, atMillis) },
+            )
             is ForwardDecision.Deliver -> MeshTransportDecision.Delivered(decision.envelope)
 
-            is ForwardDecision.Forward -> {
-                val targets = connections
-                    .asSequence()
-                    .filterNot { (peerId, _) -> peerId == fromPeer }
-                    .sortedBy { (peerId, _) -> peerId.value }
-                    .toList()
-
-                if (targets.isEmpty()) {
-                    session.recordNoRoute(envelope.id, atMillis)
-                    return MeshTransportDecision.NoRoute(decision.envelope)
-                }
-
-                val accepted: MutableList<NodeId> = mutableListOf()
-                val failures: MutableList<PeerSendFailure> = mutableListOf()
-                for ((peerId, activeConnection) in targets) {
-                    try {
-                        activeConnection.connection.send(decision.envelope)
-                    } catch (failure: BleSendException) {
-                        failures += PeerSendFailure(peerId, failure.reason)
-                        session.recordSendFailed(envelope.id, peerId, failure.reason, atMillis)
-                        scheduleRetry(
-                            PendingMeshSend(
-                                decision.envelope, peerId, 1, atMillis,
-                                expiresAtMillis = deadlineAfter(atMillis, retryPolicy.maxPendingAgeMillis),
-                            ),
-                            atMillis,
-                        )
-                        continue
-                    }
-                    accepted += peerId
-                    session.recordSendAccepted(envelope.id, peerId, atMillis)
-                }
-
-                MeshTransportDecision.Forwarded(
-                    envelope = decision.envelope,
-                    peerIds = accepted,
-                    failures = failures,
-                )
-            }
+            is ForwardDecision.Forward -> forward(decision.envelope, fromPeer, atMillis)
 
             ForwardDecision.Duplicate -> MeshTransportDecision.Dropped(
                 messageId = envelope.id,
@@ -168,6 +133,48 @@ public class MeshTransportCoordinator(
                 reason = MessageDropReason.TTL_EXPIRED,
             )
         }
+    }
+
+    private suspend fun forward(
+        envelope: MeshEnvelope, fromPeer: NodeId?, atMillis: Long,
+    ): MeshTransportDecision {
+        val targets = connections
+            .asSequence()
+            .filterNot { (peerId, _) -> peerId == fromPeer }
+            .sortedBy { (peerId, _) -> peerId.value }
+            .toList()
+
+        if (targets.isEmpty()) {
+            session.recordNoRoute(envelope.id, atMillis)
+            return MeshTransportDecision.NoRoute(envelope)
+        }
+
+        val accepted: MutableList<NodeId> = mutableListOf()
+        val failures: MutableList<PeerSendFailure> = mutableListOf()
+        for ((peerId, activeConnection) in targets) {
+            try {
+                activeConnection.connection.send(envelope)
+            } catch (failure: BleSendException) {
+                failures += PeerSendFailure(peerId, failure.reason)
+                session.recordSendFailed(envelope.id, peerId, failure.reason, atMillis)
+                scheduleRetry(
+                    PendingMeshSend(
+                        envelope, peerId, 1, atMillis,
+                        expiresAtMillis = deadlineAfter(atMillis, retryPolicy.maxPendingAgeMillis),
+                    ),
+                    atMillis,
+                )
+                continue
+            }
+            accepted += peerId
+            session.recordSendAccepted(envelope.id, peerId, atMillis)
+        }
+
+        return MeshTransportDecision.Forwarded(
+            envelope = envelope,
+            peerIds = accepted,
+            failures = failures,
+        )
     }
 
     private data class ActiveConnection(
@@ -184,6 +191,10 @@ public data class PeerSendFailure(
 )
 
 public sealed interface MeshTransportDecision {
+    public data class BroadcastDelivered(
+        public val envelope: MeshEnvelope,
+        public val forwarding: MeshTransportDecision?,
+    ) : MeshTransportDecision
     public data class Delivered(
         public val envelope: MeshEnvelope,
     ) : MeshTransportDecision

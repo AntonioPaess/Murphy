@@ -20,6 +20,23 @@ class MeshTransportCoordinatorTest {
     private val relay = Peer(NodeId("relay"), "Relay")
     private val companion = Peer(NodeId("companion"), "Companion")
 
+    @Test fun deliversBroadcastLocallyAndRelaysWithoutSendingBackToSource() {
+        val session = MeshSession(local)
+        val coordinator = MeshTransportCoordinator(session)
+        val source = FakeBlePeerConnection(); val target = FakeBlePeerConnection()
+        coordinator.attach(relay, source); coordinator.attach(companion, target)
+        val packet = envelope(destination = NodeId("*"), ttl = 2)
+        assertEquals(MeshTransportDecision.BroadcastDelivered(packet,
+            MeshTransportDecision.Forwarded(packet.copy(ttl = 1), listOf(companion.id))),
+            runSuspend { coordinator.handleIncoming(packet, relay.id, 11) })
+        assertEquals(emptyList(), source.sent)
+        assertEquals(listOf(packet.copy(ttl = 1)), target.sent)
+        assertEquals(1, session.snapshot().history.filterIsInstance<MeshEvent.MessageDelivered>().size)
+        val boundary = packet.copy(id = MessageId("boundary"), ttl = 0)
+        assertEquals(MeshTransportDecision.BroadcastDelivered(boundary, null),
+            runSuspend { coordinator.handleIncoming(boundary, relay.id, 12) })
+    }
+
     @Test
     fun floodsAForwardedEnvelopeToAttachedPeersExceptTheSource() {
         val relayConnection = FakeBlePeerConnection()

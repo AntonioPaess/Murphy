@@ -9,9 +9,15 @@ const approved = new Set([...Object.values(catalog.translations), ...catalog.unc
 const files = ['docs/design', 'docs/design/premium'].flatMap(dir =>
   fs.readdirSync(path.join(root, dir)).filter(name => name.endsWith('.svg')).map(name => path.join(root, dir, name)));
 const apply = process.argv.includes('--apply');
+if (files.length === 0) throw new Error('No SVG boards found.');
 let count = 0;
 for (const file of files) {
   const original = fs.readFileSync(file, 'utf8');
+  // File-provider placeholders can return empty/incomplete data without an I/O error.
+  if (Buffer.byteLength(original) !== fs.statSync(file).size ||
+      !/<svg\b/.test(original) || !original.trimEnd().endsWith('</svg>') || !/<text\b/.test(original)) {
+    throw new Error(`Incomplete SVG board: ${path.relative(root, file)}. Restore local availability before checking or applying copy.`);
+  }
   const output = original.replace(/(<text\b[^>]*>)([\s\S]*?)(<\/text>)/g, (_, start, text, end) => {
     const translated = apply ? (catalog.translations[text] ?? text) : text;
     if (!approved.has(translated)) throw new Error(`Unapproved UI copy in ${path.relative(root, file)}: ${text}`);

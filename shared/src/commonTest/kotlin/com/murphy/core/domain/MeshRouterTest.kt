@@ -7,6 +7,16 @@ class MeshRouterTest {
     private val local = NodeId("local")
     private val remote = NodeId("remote")
 
+    @Test fun boundsDeduplicationCacheAndDeliversBroadcastAtHopBoundary() {
+        val router = MeshRouter(local, seenCapacity = 2)
+        val first = MeshEnvelope(MessageId("1"), remote, NodeId("*"), "hello", 0, 0)
+        assertEquals(ForwardDecision.Broadcast(first, null), router.accept(first))
+        router.accept(first.copy(id = MessageId("2")))
+        assertEquals(ForwardDecision.Duplicate, router.accept(first))
+        router.accept(first.copy(id = MessageId("3")))
+        assertEquals(ForwardDecision.Broadcast(first, null), router.accept(first))
+    }
+
     @Test
     fun forwardsAnEnvelopeAndDecrementsTtl() {
         val router = MeshRouter(local)

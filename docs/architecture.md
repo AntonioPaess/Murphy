@@ -29,12 +29,39 @@ an emergency message.
 
 ## Current trade-off
 
-Flooding is intentionally simple and deterministic for the first demo, but it
+Flooding is intentionally simple and deterministic for the first implementation, but it
 uses more radio activity than a learned route. Battery-aware forwarding,
 connection quality and route expiry are later optimization layers; they are not
 allowed to compromise delivery when the topology changes.
 
 ## Transport outcome semantics
+
+### Live native callback path
+
+Android BluetoothGatt and iPhone CoreBluetooth feed a shared `RadioSession` on
+their main queue. Native GATT discovery reads a public identity, verifies group
+UUID scope, subscribes to notifications and exchanges identity frames. Only
+real links count as peers. Group broadcasts deliver locally and relay using
+`MeshSession`/`MeshRouter`, excluding the incoming peer. The session dedup cache
+is capped at 4,096 IDs and is not authenticated replay protection.
+
+Native transfer queues are bounded to eight packets per link with a total
+60-second deadline; a stalled transfer closes/resets its link rather than
+misassigning a late callback to another packet. Reassembly also has a fixed
+60-second deadline and an 8-KiB cap. This is not durable retry/recovery.
+
+Both platforms scan in bounded 10-second foreground windows. Background closes
+links; there is no background service/state restoration promise yet. Open group
+UUIDs prevent accidental same-name mixing, not impersonation. The wire is
+unencrypted/unauthenticated; sensitive use and emergency reliance are forbidden
+for this build. [Wire details](radio-protocol.md).
+
+### Separate coordinator contract
+
+The suspend-based coordinator below is tested independently. Its retry policy
+and scheduling API are **not integrated into the live native callback path**.
+Do not infer automatic retry, destination receipt or durable state from these
+core tests.
 
 The coordinator attempts each eligible peer in deterministic order. An expected
 radio error is reported as `BleSendException`; it is recorded for that peer and
